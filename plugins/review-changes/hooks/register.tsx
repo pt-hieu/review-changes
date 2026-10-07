@@ -23,6 +23,7 @@ const CANDIDATE_REFRESH_MILLISECONDS = 20_000
 const REVIEW_BUTTON_COLUMNS = 20
 const OPEN_LAST_BUTTON_COLUMNS = 22
 const HIDE_BUTTON_COLUMNS = 8
+const BAND_GAP_COLUMNS = 1
 
 function pluginDirectoryOf(pluginRoot: string): string {
   return pluginRoot.replace(/\/\.claude-plugin\/?$/, '')
@@ -110,19 +111,23 @@ export const register: Register = on => {
     if (!isRunning && offer === null && lastReview === null) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const buttonColumns =
-      HIDE_BUTTON_COLUMNS + (lastReview ? OPEN_LAST_BUTTON_COLUMNS : 0) + (!isRunning && offer ? REVIEW_BUTTON_COLUMNS : 0)
+    const buttonWidths = [
+      HIDE_BUTTON_COLUMNS,
+      ...(lastReview ? [OPEN_LAST_BUTTON_COLUMNS] : []),
+      ...(!isRunning && offer ? [REVIEW_BUTTON_COLUMNS] : []),
+    ]
+    const buttonColumns = buttonWidths.reduce((total, width) => total + width + BAND_GAP_COLUMNS, 0)
     const textColumns = Math.max(0, e.props.bodyColumns - buttonColumns)
 
     return (
-      <Box flexDirection="row">
+      <Box flexDirection="row" marginTop={1} columnGap={BAND_GAP_COLUMNS}>
         {isRunning ? (
           <Text key="progress" dimColor wrap="truncate">
-            {truncate(`Reviewing ${runningReview.label}: ${runningReview.phase}… `, textColumns)}
+            {truncate(`Reviewing ${runningReview.label}: ${runningReview.phase}…`, textColumns)}
           </Text>
         ) : offer ? (
           <Text key="summary" dimColor wrap="truncate">
-            {truncate(`${offer.summary} `, textColumns)}
+            {truncate(offer.summary, textColumns)}
           </Text>
         ) : null}
         {!isRunning && offer ? (

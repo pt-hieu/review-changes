@@ -18,7 +18,7 @@ function baseOptions(layout: DiffLayout) {
     themeType: 'system',
     preferredHighlighter: 'shiki-js',
     disableFileHeader: true,
-    overflow: 'scroll',
+    overflow: 'wrap',
     lineDiffType: 'word-alt',
     hunkSeparators: 'line-info',
     diffIndicators: 'bars',

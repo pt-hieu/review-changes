@@ -1,0 +1,17 @@
+{
+  "name": "review-changes",
+  "owner": {
+    "name": "Brian"
+  },
+  "description": "Local marketplace for the review-changes mod.",
+  "plugins": [
+    {
+      "name": "review-changes",
+      "source": "./plugins/review-changes",
+      "description": "Helps you review the current repo's changes faster: groups them by concern, notes what to look at, and renders the diff with @pierre/diffs in a local page. It never reviews on your behalf and never changes the code.",
+      "author": {
+        "name": "Brian"
+      }
+    }
+  ]
+}

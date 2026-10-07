@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+*.log
+# Laid beside the plugin by the engine on every load; regenerated, never edited.
+plugins/review-changes/.claude-plugin/types/

@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-07T09:30:00.000Z",
+  "repository": {
+    "root": "/home/example/notes",
+    "name": "example/notes"
+  },
+  "target": {
+    "kind": "pull-request",
+    "key": "pr-12",
+    "label": "#12",
+    "number": 12,
+    "url": "https://github.com/example/notes/pull/12",
+    "baseRef": "main",
+    "headRef": "feature/search",
+    "author": "example",
+    "state": "OPEN"
+  },
+  "title": "🔎 Search notes by every word of the query",
+  "description": "Closes #11\n\n## Summary\n\nAdds `GET /notes/search?q=` and `DELETE /notes/:id`. A note matches a search when its title or body contains **every** word of the query.\n\n```diff\n-  return [...notes.values()]\n+  return [...notes.values()].sort((left, right) => right.updatedAt - left.updatedAt)\n```\n\n- [x] Tests for the matching rule\n- [ ] Pagination",
+  "commits": [
+    {
+      "sha": "1c33d2936f254e050be919f2f1ec6c34faad5b63",
+      "subject": "Search notes by every word of the query",
+      "author": "example"
+    }
+  ],
+  "files": [
+    {
+      "path": "README.markdown",
+      "status": "added",
+      "additions": 3,
+      "deletions": 0,
+      "isBinary": false,
+      "hunks": [
+        {
+          "header": "@@ -0,0 +1,3 @@",
+          "oldStart": 0,
+          "oldLines": 0,
+          "newStart": 1,
+          "newLines": 3
+        }
+      ],
+      "patch": "diff --git a/README.markdown b/README.markdown\nnew file mode 100644\nindex 0000000..853fdbb\n--- /dev/null\n+++ b/README.markdown\n@@ -0,0 +1,3 @@\n+# notes\n+\n+A tiny notes service with search.\n",
+      "patchHash": "cdfc75a4052113d8a84b94c29d685cc3a530538d55eb3c03fcaa05277b39be6d",
+      "isPatchOmitted": false
+    },
+    {
+      "path": "README.md",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 3,
+      "isBinary": false,
+      "hunks": [
+        {
+          "header": "@@ -1,3 +0,0 @@",
+          "oldStart": 1,
+          "oldLines": 3,
+          "newStart": 0,
+          "newLines": 0
+        }
+      ],
+      "patch": "diff --git a/README.md b/README.md\ndeleted file mode 100644\nindex 609d3ca..0000000\n--- a/README.md\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-# notes\n-\n-A tiny notes service.\n",
+      "patchHash": "f976e9980d74168f665979ac72c07dee57765c74a97ee51f2b801b901df9fac1",
+      "isPatchOmitted": false
+    },
+    {
+      "path": "src/api/routes.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 1,
+      "isBinary": false,
+      "hunks": [
+        {
+          "header": "@@ -1,8 +1,14 @@",
+          "oldStart": 1,
+          "oldLines": 8,
+          "newStart": 1,
+          "newLines": 14
+        },
+        {
+          "header": "@@ -14,5 +20,9 @@ export function handle(method: string, path: string, body: unknown): { status: n",
+          "oldStart": 14,
+          "oldLines": 5,
+          "newStart": 20,
+          "newLines": 9
+        }
+      ],
+      "patch": "diff --git a/src/api/routes.ts b/src/api/routes.ts\nindex bafe527..b05143a 100644\n--- a/src/api/routes.ts\n+++ b/src/api/routes.ts\n@@ -1,8 +1,14 @@\n-import { findNote, listNotes, saveNote } from '../notes/store.ts'\n+import { searchNotes } from '../notes/search.ts'\n+import { deleteNote, findNote, listNotes, saveNote } from '../notes/store.ts'\n \n export function handle(method: string, path: string, body: unknown): { status: number; body: unknown } {\n   if (method === 'GET' && path === '/notes') return { status: 200, body: listNotes() }\n \n+  if (method === 'GET' && path.startsWith('/notes/search?q=')) {\n+    const query = decodeURIComponent(path.slice('/notes/search?q='.length))\n+    return { status: 200, body: searchNotes(query) }\n+  }\n+\n   const match = /^\\/notes\\/(\\w+)$/.exec(path)\n   if (method === 'GET' && match) {\n     const note = findNote(match[1]!)\n@@ -14,5 +20,9 @@ export function handle(method: string, path: string, body: unknown): { status: n\n     return { status: 204, body: null }\n   }\n \n+  if (method === 'DELETE' && match) {\n+    return deleteNote(match[1]!) ? { status: 204, body: null } : { status: 404, body: null }\n+  }\n+\n   return { status: 404, body: null }\n }\n",
+      "patchHash": "6df81c5ce13bcb913bc05d8f50a7d9f79cd60e150bea484b4aa4ca2808ccb6b4",
+      "isPatchOmitted": false
+    },
+    {
+      "path": "src/notes/__test__/search.test.ts",
+      "status": "added",
+      "additions": 15,
+      "deletions": 0,
+      "isBinary": false,
+      "hunks": [
+        {
+          "header": "@@ -0,0 +1,15 @@",
+          "oldStart": 0,
+          "oldLines": 0,
+          "newStart": 1,
+          "newLines": 15
+        }
+      ],
+      "patch": "diff --git a/src/notes/__test__/search.test.ts b/src/notes/__test__/search.test.ts\nnew file mode 100644\nindex 0000000..9bdf92d\n--- /dev/null\n+++ b/src/notes/__test__/search.test.ts\n@@ -0,0 +1,15 @@\n+import { expect, test } from 'bun:test'\n+\n+import { searchNotes } from '../search.ts'\n+import { saveNote } from '../store.ts'\n+\n+test('finds a note only when every word matches', () => {\n+  saveNote({ id: 'a', title: 'Groceries', body: 'milk and eggs', updatedAt: 1 })\n+  saveNote({ id: 'b', title: 'Work', body: 'eggs for the team breakfast', updatedAt: 2 })\n+\n+  expect(searchNotes('milk eggs').map(note => note.id)).toEqual(['a'])\n+})\n+\n+test('returns nothing for a blank query', () => {\n+  expect(searchNotes('   ')).toEqual([])\n+})\n",
+      "patchHash": "e4e6638108437eef2be8126c7749c03b3069c4f5a953fe1a95cfb092b9f49536",
+      "isPatchOmitted": false
+    },
+    {
+      "path": "src/notes/format.ts",
+      "status": "removed",
+      "additions": 0,
+      "deletions": 3,
+      "isBinary": false,
+      "hunks": [
+        {
+          "header": "@@ -1,3 +0,0 @@",
+          "oldStart": 1,
+          "oldLines": 3,
+          "newStart": 0,
+          "newLines": 0
+        }
+      ],
+      "patch": "diff --git a/src/notes/format.ts b/src/notes/format.ts\ndeleted file mode 100644\nindex 0979252..0000000\n--- a/src/notes/format.ts\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-export function formatTitle(title: string): string {\n-  return title.trim() || 'Untitled'\n-}\n",
+      "patchHash": "7d51a781487f02a5af87b24611a468f04e7a895ed38e190bb6de373da199bc53",
+      "isPatchOmitted": false
+    },
+    {
+      "path": "src/notes/search.ts",
+      "status": "added",
+      "additions": 12,
+      "deletions": 0,
+      "isBinary": false,
+      "hunks": [
+        {
+          "header": "@@ -0,0 +1,12 @@",
+          "oldStart": 0,
+          "oldLines": 0,
+          "newStart": 1,
+          "newLines": 12
+        }
+      ],
+      "patch": "diff --git a/src/notes/search.ts b/src/notes/search.ts\nnew file mode 100644\nindex 0000000..2e0580d\n--- /dev/null\n+++ b/src/notes/search.ts\n@@ -0,0 +1,12 @@\n+import { listNotes } from './store.ts'\n+import type { Note } from './store.ts'\n+\n+export function searchNotes(query: string): Note[] {\n+  const words = query.toLowerCase().split(/\\s+/).filter(Boolean)\n+  if (words.length === 0) return []\n+\n+  return listNotes().filter(note => {\n+    const text = `${note.title} ${note.body}`.toLowerCase()\n+    return words.every(word => text.includes(word))\n+  })\n+}\n",
+      "patchHash": "b299f6a3e7a39b51524012894fd817fb1bc5a1b0e549aa6245810c490d75e025",
+      "isPatchOmitted": false
+    },
+    {
+      "path": "src/notes/store.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 1,
+      "isBinary": false,
+      "hunks": [
+        {
+          "header": "@@ -16,5 +16,9 @@ export function findNote(id: string): Note | undefined {",
+          "oldStart": 16,
+          "oldLines": 5,
+          "newStart": 16,
+          "newLines": 9
+        }
+      ],
+      "patch": "diff --git a/src/notes/store.ts b/src/notes/store.ts\nindex deb514c..d146fac 100644\n--- a/src/notes/store.ts\n+++ b/src/notes/store.ts\n@@ -16,5 +16,9 @@ export function findNote(id: string): Note | undefined {\n }\n \n export function listNotes(): Note[] {\n-  return [...notes.values()]\n+  return [...notes.values()].sort((left, right) => right.updatedAt - left.updatedAt)\n+}\n+\n+export function deleteNote(id: string): boolean {\n+  return notes.delete(id)\n }\n",
+      "patchHash": "4882aa35b6fc2d70d1a73d9b35aa96ca4d5f214ed0a90247594f4a751f5bc91e",
+      "isPatchOmitted": false
+    }
+  ],
+  "analysisModel": "claude-sonnet-5-5",
+  "analysis": {
+    "overallSummary": "Adds **search** and **delete** to the notes API. Search lowercases the query and keeps the notes that contain every word. `listNotes` now returns the newest note first, which also changes the order of `GET /notes`. The rest is a test file, a removed formatter, and the README moving to `README.markdown`.",
+    "groups": [
+      {
+        "key": "search",
+        "label": "Search by every word",
+        "category": "core",
+        "summary": "`searchNotes` splits the query on whitespace and keeps a note when its title and body together contain each word. A blank query returns no notes rather than all of them.",
+        "filePaths": [
+          "src/notes/search.ts",
+          "src/notes/__test__/search.test.ts"
+        ],
+        "fileNotes": [
+          {
+            "path": "src/notes/__test__/search.test.ts",
+            "text": "Pins the every-word rule and the blank query."
+          }
+        ],
+        "lineNotes": [
+          {
+            "path": "src/notes/search.ts",
+            "side": "additions",
+            "line": 6,
+            "text": "A blank query returns `[]`, not every note."
+          },
+          {
+            "path": "src/notes/search.ts",
+            "side": "additions",
+            "line": 9,
+            "text": "Title and body are joined with a space, so a word cannot match across the boundary."
+          }
+        ]
+      },
+      {
+        "key": "routes",
+        "label": "New search and delete routes",
+        "category": "api",
+        "summary": "`handle` answers `GET /notes/search?q=` before the `/notes/:id` match, and adds `DELETE /notes/:id`, which answers 404 for an unknown id.",
+        "filePaths": [
+          "src/api/routes.ts"
+        ],
+        "fileNotes": [],
+        "lineNotes": [
+          {
+            "path": "src/api/routes.ts",
+            "side": "additions",
+            "line": 7,
+            "critical": true,
+            "text": "The search route must come before the `/notes/:id` match; `search` would otherwise match `\\w+` as an id."
+          },
+          {
+            "path": "src/api/routes.ts",
+            "side": "additions",
+            "line": 8,
+            "text": "`decodeURIComponent` throws on a malformed escape such as `%E0`."
+          }
+        ]
+      },
+      {
+        "key": "store-order",
+        "label": "Newest note first",
+        "category": "data",
+        "summary": "`listNotes` sorts by `updatedAt`, newest first, and `deleteNote` is new. Every caller of `listNotes` sees the new order, including `GET /notes`.",
+        "filePaths": [
+          "src/notes/store.ts"
+        ],
+        "fileNotes": [
+          {
+            "path": "src/notes/store.ts",
+            "text": "The sort changes the response of an existing endpoint.",
+            "critical": true
+          }
+        ],
+        "lineNotes": []
+      },
+      {
+        "key": "housekeeping",
+        "label": "Removed formatter and README",
+        "category": "docs",
+        "summary": "`formatTitle` had no callers and is removed. The README moves to `README.markdown` and mentions search.",
+        "filePaths": [
+          "src/notes/format.ts",
+          "README.md",
+          "README.markdown"
+        ],
+        "fileNotes": [],
+        "lineNotes": []
+      }
+    ]
+  }
+}

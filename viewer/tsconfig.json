@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "types": ["bun"],
+    "paths": {
+      "@pierre/theming/dist/*": ["../node_modules/@pierre/theming/dist/*"]
+    }
+  },
+  "include": ["**/*.ts", "../plugins/review-changes/hooks/payload.ts", "../plugins/review-changes/hooks/types.ts"],
+  "exclude": ["dev/*.html"]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "review-changes",
+  "version": "0.1.0",
+  "description": "Helps you review the current repo's changes faster: groups them by concern, notes what to look at, and renders the diff with @pierre/diffs in a local page. It never reviews on your behalf and never changes the code.",
+  "author": { "name": "Brian" },
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

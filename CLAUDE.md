@@ -16,3 +16,13 @@ Anything that drifts from the goal:
 When a feature request or design choice does not make the human's own review faster or clearer, it does not belong here.
 
 Every coding rule is in `CODING_STANDARDS.md`.
+
+## Before committing
+
+**Version bumps** — in the same commit as any change to `plugins/review-changes/`:
+
+1. `plugins/review-changes/.claude-plugin/plugin.json` — the plugin's `version`.
+2. `.claude-plugin/marketplace.json` — the matching per-plugin `version` entry.
+3. `.claude-plugin/marketplace.json` — the top-level `metadata.version`.
+
+**Viewer bundle** — after any change under `viewer/`, run `bun run build:viewer` and commit the rebuilt `plugins/review-changes/assets/`.

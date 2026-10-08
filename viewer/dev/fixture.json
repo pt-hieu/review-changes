@@ -199,7 +199,85 @@
             "line": 9,
             "text": "Title and body are joined with a space, so a word cannot match across the boundary."
           }
-        ]
+        ],
+        "visual": {
+          "caption": "How a search request reaches the store",
+          "lines": [
+            {
+              "text": "handle",
+              "depth": 0,
+              "change": "unchanged",
+              "anchor": {
+                "path": "src/api/routes.ts"
+              }
+            },
+            {
+              "text": "GET /notes/search?q= → searchNotes",
+              "depth": 1,
+              "change": "added",
+              "anchor": {
+                "path": "src/api/routes.ts",
+                "side": "additions",
+                "line": 7
+              }
+            },
+            {
+              "text": "searchNotes",
+              "depth": 2,
+              "change": "added",
+              "anchor": {
+                "path": "src/notes/search.ts",
+                "side": "additions",
+                "line": 4
+              }
+            },
+            {
+              "text": "split the query into lowercase words",
+              "depth": 3,
+              "change": "added",
+              "anchor": {
+                "path": "src/notes/search.ts",
+                "side": "additions",
+                "line": 5
+              }
+            },
+            {
+              "text": "blank query → []",
+              "depth": 3,
+              "change": "added",
+              "anchor": {
+                "path": "src/notes/search.ts",
+                "side": "additions",
+                "line": 6
+              }
+            },
+            {
+              "text": "listNotes, now newest first",
+              "depth": 3,
+              "change": "unchanged",
+              "anchor": {
+                "path": "src/notes/store.ts",
+                "side": "additions",
+                "line": 19
+              }
+            },
+            {
+              "text": "keep notes holding every word",
+              "depth": 3,
+              "change": "added",
+              "anchor": {
+                "path": "src/notes/search.ts",
+                "side": "additions",
+                "line": 10
+              }
+            },
+            {
+              "text": "GET /notes/:id → findNote",
+              "depth": 1,
+              "change": "unchanged"
+            }
+          ]
+        }
       },
       {
         "key": "routes",

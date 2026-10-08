@@ -7,11 +7,15 @@ import {
   fallbackAnalysis,
   INLINE_DIFF_CHARACTER_LIMIT,
   isGeneratedPath,
+  MAXIMUM_VISUAL_LINES,
   parseAnalyzerAnswer,
+  selectUserRequests,
+  SINGLE_USER_REQUEST_CHARACTER_LIMIT,
+  USER_REQUESTS_TOTAL_CHARACTER_LIMIT,
 } from '../analysis.ts'
 import type { ReviewSource } from '../git.ts'
 import type { ReviewFile, ReviewPayload } from '../payload.ts'
-import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind } from '../types.ts'
+import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind, ReviewVisualChange } from '../types.ts'
 
 const appPatch = [
   'diff --git a/src/app.ts b/src/app.ts',
@@ -217,6 +221,107 @@ describe('parseAnalyzerAnswer', () => {
     })
   })
 
+  test('reads a group’s picture into depth, change and a link to the code', () => {
+    const answer = JSON.stringify({
+      overallSummary: '',
+      groups: [
+        {
+          key: 'server-host',
+          label: 'Server host',
+          category: ReviewCategory.Core,
+          summary: '',
+          filePaths: ['src/app.ts', 'src/app.test.ts', 'README.md', 'bun.lock'],
+          visual: {
+            caption: '  Where the host goes  ',
+            lines: [
+              ' start (src/app.ts)',
+              '-    listen(port) (src/app.ts:11)',
+              '+    listen(port, host) (src/app.ts:12)',
+              '+        log("started") (src/app.ts:14)',
+              '     documented (README.md)',
+            ],
+          },
+        },
+      ],
+    })
+
+    expect(parseAnalyzerAnswer(answer, files).analysis.groups[0]?.visual).toStrictEqual({
+      caption: 'Where the host goes',
+      lines: [
+        { text: 'start', depth: 0, change: ReviewVisualChange.Unchanged, anchor: { path: 'src/app.ts' } },
+        {
+          text: 'listen(port)',
+          depth: 1,
+          change: ReviewVisualChange.Removed,
+          anchor: { path: 'src/app.ts', side: ReviewLineSide.Deletions, line: 11 },
+        },
+        {
+          text: 'listen(port, host)',
+          depth: 1,
+          change: ReviewVisualChange.Added,
+          anchor: { path: 'src/app.ts', side: ReviewLineSide.Additions, line: 12 },
+        },
+        {
+          text: 'log("started")',
+          depth: 2,
+          change: ReviewVisualChange.Added,
+          anchor: { path: 'src/app.ts', side: ReviewLineSide.Additions, line: 14 },
+        },
+        { text: 'documented', depth: 1, change: ReviewVisualChange.Unchanged, anchor: { path: 'README.md' } },
+      ],
+    })
+  })
+
+  test('degrades a picture’s bad lines instead of dropping the picture', () => {
+    const answer = JSON.stringify({
+      overallSummary: '',
+      groups: [
+        {
+          key: 'server-host',
+          label: 'Server host',
+          category: ReviewCategory.Core,
+          summary: '',
+          filePaths: ['src/app.ts', 'src/app.test.ts', 'README.md', 'bun.lock'],
+          visual: {
+            lines: [
+              '+ outside every hunk (src/app.ts:99)',
+              42,
+              '   ',
+              '+ unknown file (src/missing.ts:3)',
+              '+ listen(port)',
+            ],
+          },
+        },
+      ],
+    })
+
+    expect(parseAnalyzerAnswer(answer, files).analysis.groups[0]?.visual).toStrictEqual({
+      caption: '',
+      lines: [
+        { text: 'outside every hunk', depth: 0, change: ReviewVisualChange.Added, anchor: { path: 'src/app.ts' } },
+        { text: 'unknown file (src/missing.ts:3)', depth: 0, change: ReviewVisualChange.Added },
+        { text: 'listen(port)', depth: 0, change: ReviewVisualChange.Added },
+      ],
+    })
+  })
+
+  test('keeps at most the line limit of a picture, and no picture without lines', () => {
+    const manyLines = Array.from({ length: MAXIMUM_VISUAL_LINES + 5 }, (_, index) => `+ step ${index}`)
+    const answer = JSON.stringify({
+      overallSummary: '',
+      groups: [
+        { key: 'long', label: 'Long', category: ReviewCategory.Core, summary: '', filePaths: ['src/app.ts'], visual: { lines: manyLines } },
+        { key: 'empty', label: 'Empty', category: ReviewCategory.Docs, summary: '', filePaths: ['README.md'], visual: { lines: ['  ', 7] } },
+      ],
+    })
+
+    const [longGroup, emptyGroup] = parseAnalyzerAnswer(answer, files).analysis.groups
+
+    expect(longGroup?.visual?.lines).toHaveLength(40)
+    expect(longGroup?.visual?.lines.at(-1)?.text).toBe('step 39')
+    expect(emptyGroup).not.toHaveProperty('visual')
+  })
+
   test('falls back to one Uncategorized group when the answer holds no JSON', () => {
     expect(parseAnalyzerAnswer('I could not finish the grouping.', files)).toStrictEqual({
       analysis: {
@@ -240,6 +345,14 @@ describe('parseAnalyzerAnswer', () => {
 
 describe('buildAnalyzerPrompt', () => {
   const patchPath = '/repo/.git/review-changes/worktree.patch'
+
+  test('lists the user’s requests in order, and no request section without any', () => {
+    const withRequests = buildAnalyzerPrompt(source, files, patchPath, ['Bind to every interface.', 'Also log on start.'])
+    const withoutRequests = buildAnalyzerPrompt(source, files, patchPath, [])
+
+    expect(withRequests).toContain('---USER REQUESTS--- (2, oldest first)\n[1]\nBind to every interface.\n\n[2]\nAlso log on start.')
+    expect(withoutRequests).not.toContain('USER REQUESTS')
+  })
 
   test('inlines the diffs below the limit, leaving out generated files’ bodies', () => {
     const prompt = buildAnalyzerPrompt(source, files, patchPath)
@@ -324,6 +437,43 @@ describe('buildAnalyzerPrompt', () => {
     expect(prompt).toContain('Why this change exists')
     expect(prompt).toContain('abcdef1 First step')
     expect(prompt).toContain('1234567 Second step')
+  })
+})
+
+describe('selectUserRequests', () => {
+  test('keeps only what the user typed, oldest first', () => {
+    const requests = selectUserRequests([
+      { role: 'user', text: 'Add search.<system-reminder>Today is Monday.</system-reminder>' },
+      { role: 'assistant', text: 'Adding search now.' },
+      { role: 'user', text: '' },
+      { role: 'user', text: 'review-changes wrote a review page\n<review-changes-analysis>\nAdds search.\n</review-changes-analysis>' },
+      { role: 'user', text: '<command-name>/review-changes</command-name>' },
+      { role: 'user', text: 'Make the query case-insensitive.' },
+    ])
+
+    expect(requests).toEqual(['Add search.', 'Make the query case-insensitive.'])
+  })
+
+  test('keeps the first request and the newest ones when the session is long', () => {
+    const middleRequest = 'm'.repeat(SINGLE_USER_REQUEST_CHARACTER_LIMIT)
+    const messages = [
+      { role: 'user' as const, text: 'First request.' },
+      ...Array.from({ length: 5 }, () => ({ role: 'user' as const, text: middleRequest })),
+      { role: 'user' as const, text: 'Newest request.' },
+    ]
+
+    const requests = selectUserRequests(messages)
+
+    expect(requests[0]).toBe('First request.')
+    expect(requests.at(-1)).toBe('Newest request.')
+    expect(requests.join('').length).toBeLessThanOrEqual(USER_REQUESTS_TOTAL_CHARACTER_LIMIT)
+    expect(requests.length).toBeLessThan(messages.length)
+  })
+
+  test('cuts one very long message short', () => {
+    const [request] = selectUserRequests([{ role: 'user', text: 'x'.repeat(SINGLE_USER_REQUEST_CHARACTER_LIMIT + 100) }])
+
+    expect(request).toBe(`${'x'.repeat(SINGLE_USER_REQUEST_CHARACTER_LIMIT)}…`)
   })
 })
 

@@ -1,6 +1,14 @@
 import type { PluginState } from 'claude-code'
 
-import { buildAnalyzerPrompt, buildModelNoteWithUntrustedAnalysis, buildSessionNote, fallbackAnalysis, parseAnalyzerAnswer } from './analysis.ts'
+import {
+  buildAnalyzerPrompt,
+  buildModelNoteWithUntrustedAnalysis,
+  buildSessionNote,
+  fallbackAnalysis,
+  parseAnalyzerAnswer,
+  selectUserRequests,
+} from './analysis.ts'
+import type { SessionMessageText } from './analysis.ts'
 import { countOf, totalLineCounts } from './counts.ts'
 import { ReviewSourceError, findReviewCandidate, resolveReviewSource } from './git.ts'
 import type { ReviewSource, RunCommand } from './git.ts'
@@ -21,6 +29,7 @@ export type ReviewEngine = {
   runCommand: RunCommand
   shouldOpenBrowser: () => Promise<boolean>
   sessionWorkingDirectory: () => Promise<string>
+  readSessionMessages: () => Promise<SessionMessageText[]>
   readFile: (path: string) => Promise<string>
   writeFile: (path: string, text: string) => Promise<void>
   spawnAnalyzer: (request: { prompt: string; description: string; cwd: string }) => Promise<{
@@ -169,6 +178,7 @@ async function collectAndAnalyze(
   }
 
   const label = source.target.label
+  const userRequests = selectUserRequests(await engine.readSessionMessages().catch(() => []))
 
   let model: string | undefined
   let answer: Promise<AnalyzerAnswer> | undefined
@@ -176,7 +186,7 @@ async function collectAndAnalyze(
   try {
     const spawned = await engine.spawnAnalyzer({
       description: 'Group changes for review',
-      prompt: buildAnalyzerPrompt(source, files, patchPath),
+      prompt: buildAnalyzerPrompt(source, files, patchPath, userRequests),
       cwd: source.repository.root,
     })
 

@@ -1,12 +1,20 @@
 import type {
+  ReviewAnchor,
   ReviewFile,
   ReviewFileNote,
   ReviewGroup,
-  ReviewLineNote,
   ReviewPayload,
   ReviewTarget,
+  ReviewVisual,
+  ReviewVisualLine,
 } from '../../plugins/review-changes/hooks/payload.ts'
-import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind } from '../../plugins/review-changes/hooks/types.ts'
+import {
+  ReviewCategory,
+  ReviewFileStatus,
+  ReviewLineSide,
+  ReviewTargetKind,
+  ReviewVisualChange,
+} from '../../plugins/review-changes/hooks/types.ts'
 import { estimateUnifiedRowCount, mountDiff, type MountedDiff } from './diff.ts'
 import { append, clear, element, httpUrlOrNull, type Child } from './dom.ts'
 import { renderMarkdown } from './markdown.ts'
@@ -20,6 +28,12 @@ import {
 } from './storage.ts'
 import { DiffLayout } from './types.ts'
 
+const visualMarkers: Record<ReviewVisualChange, string> = {
+  [ReviewVisualChange.Added]: '+',
+  [ReviewVisualChange.Removed]: '−',
+  [ReviewVisualChange.Unchanged]: ' ',
+}
+
 const statusLabels: Record<ReviewFileStatus, string> = {
   [ReviewFileStatus.Added]: 'Added',
   [ReviewFileStatus.Removed]: 'Deleted',
@@ -28,7 +42,7 @@ const statusLabels: Record<ReviewFileStatus, string> = {
   [ReviewFileStatus.Copied]: 'Copied',
 }
 
-type CriticalItem = { path: string; line?: number; side?: ReviewLineNote['side']; text: string }
+type CriticalItem = { anchor: ReviewAnchor; text: string }
 
 export function startViewer(root: HTMLElement, payload: ReviewPayload): void {
   const filesByPath = new Map(payload.files.map((file) => [file.path, file]))
@@ -212,6 +226,7 @@ export function startViewer(root: HTMLElement, payload: ReviewPayload): void {
         group.critical && element('span', { class: 'careful-chip' }, 'Review carefully'),
       ),
       group.summary && element('div', { class: 'markdown group-summary' }, renderMarkdown(group.summary)),
+      group.visual && renderVisual(group.visual),
       criticalItems.length > 0 && renderCallout(criticalItems),
     ])
     const fileList = element('div', { class: 'file-list' })
@@ -233,16 +248,40 @@ export function startViewer(root: HTMLElement, payload: ReviewPayload): void {
         'ul',
         {},
         ...items.map((item) => {
-          const location = element(
-            'button',
-            { type: 'button', class: 'callout-location' },
-            item.line === undefined ? item.path : `${item.path}:${item.line}${item.side === ReviewLineSide.Deletions ? ' (old)' : ''}`,
-          )
-          location.addEventListener('click', () => jumpToFile(item.path, { isExpanding: true }))
+          const location = element('button', { type: 'button', class: 'callout-location' }, anchorLabel(item.anchor))
+          location.addEventListener('click', () => jumpToAnchor(item.anchor))
           return element('li', {}, location, element('div', { class: 'markdown' }, renderMarkdown(item.text)))
         }),
       ),
     )
+  }
+
+  function renderVisual(visual: ReviewVisual): HTMLElement {
+    return element(
+      'figure',
+      { class: 'visual' },
+      visual.caption && element('figcaption', {}, visual.caption),
+      element('div', { class: 'visual-lines' }, ...visual.lines.map(renderVisualLine)),
+    )
+  }
+
+  function renderVisualLine(line: ReviewVisualLine): HTMLElement {
+    const attributes = { class: 'visual-line', 'data-change': line.change, style: `--depth: ${line.depth}` }
+    const content = [
+      element('span', { class: 'visual-marker', 'aria-hidden': 'true' }, visualMarkers[line.change]),
+      element('span', { class: 'visual-text' }, line.text),
+    ]
+    const { anchor } = line
+    if (!anchor) return element('div', attributes, ...content)
+
+    const button = element(
+      'button',
+      { ...attributes, type: 'button', title: `Jump to ${anchorLabel(anchor)}` },
+      ...content,
+      element('span', { class: 'visual-location' }, shortAnchorLabel(anchor)),
+    )
+    button.addEventListener('click', () => jumpToAnchor(anchor))
+    return button
   }
 
   function renderFileCard(file: ReviewFile, group: ReviewGroup): HTMLElement {
@@ -430,6 +469,23 @@ export function startViewer(root: HTMLElement, payload: ReviewPayload): void {
     focusFile(path)
   }
 
+  function jumpToLine(path: string, side: ReviewLineSide, line: number): void {
+    jumpToFile(path, { isExpanding: true })
+
+    const host = cardsByPath.get(path)?.querySelector<HTMLElement>('.diff-host')
+    if (host && !mountedDiffs.has(path)) {
+      diffObserver.unobserve(host)
+      mountDiffInto(host)
+    }
+
+    mountedDiffs.get(path)?.revealLine(side, line)
+  }
+
+  function jumpToAnchor(anchor: ReviewAnchor): void {
+    if (anchor.side !== undefined && anchor.line !== undefined) jumpToLine(anchor.path, anchor.side, anchor.line)
+    else jumpToFile(anchor.path, { isExpanding: true })
+  }
+
   function moveFocus(step: 1 | -1): void {
     if (allPathsInOrder.length === 0) return
     const currentIndex = focusedPath === null ? -1 : allPathsInOrder.indexOf(focusedPath)
@@ -528,11 +584,25 @@ function isGroupCritical(group: ReviewGroup): boolean {
 
 function collectCriticalItems(group: ReviewGroup): CriticalItem[] {
   return [
-    ...group.fileNotes.filter((note) => note.critical).map((note) => ({ path: note.path, text: note.text })),
+    ...group.fileNotes.filter((note) => note.critical).map((note) => ({ anchor: { path: note.path }, text: note.text })),
     ...group.lineNotes
       .filter((note) => note.critical)
-      .map((note) => ({ path: note.path, line: note.line, side: note.side, text: note.text })),
+      .map((note) => ({ anchor: { path: note.path, side: note.side, line: note.line }, text: note.text })),
   ]
+}
+
+function lineSuffix(anchor: ReviewAnchor): string {
+  if (anchor.line === undefined) return ''
+
+  return `:${anchor.line}${anchor.side === ReviewLineSide.Deletions ? ' (old)' : ''}`
+}
+
+function anchorLabel(anchor: ReviewAnchor): string {
+  return `${anchor.path}${lineSuffix(anchor)}`
+}
+
+function shortAnchorLabel(anchor: ReviewAnchor): string {
+  return `${anchor.path.slice(anchor.path.lastIndexOf('/') + 1)}${lineSuffix(anchor)}`
 }
 
 function diffPlaceholder(file: ReviewFile): string | null {

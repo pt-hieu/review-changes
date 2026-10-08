@@ -139,6 +139,40 @@ describe('a run in flight', () => {
   })
 })
 
+describe('the analyzer prompt', () => {
+  test('carries what the user asked for in the session', async () => {
+    const { engine, world } = fakeEngine(
+      { deny: 'denied' },
+      {
+        sessionMessages: [
+          { role: 'user', text: 'Make the server reachable from other containers.' },
+          { role: 'assistant', text: 'I will bind to every interface.' },
+        ],
+      },
+    )
+
+    const started = await startReview(engine, '--worktree')
+    await started.completion
+
+    expect(world.analyzerPrompts).toHaveLength(1)
+    expect(world.analyzerPrompts[0]).toContain('Make the server reachable from other containers.')
+    expect(world.analyzerPrompts[0]).not.toContain('I will bind to every interface.')
+  })
+
+  test('still reaches the analyzer when the session cannot be read', async () => {
+    const { engine, world } = fakeEngine({ deny: 'denied' })
+    engine.readSessionMessages = async () => {
+      throw new Error('transcript unavailable')
+    }
+
+    const started = await startReview(engine, '--worktree')
+    await started.completion
+
+    expect(world.analyzerPrompts).toHaveLength(1)
+    expect(world.analyzerPrompts[0]).toContain('listen(port, "0.0.0.0")')
+  })
+})
+
 describe('deliver', () => {
   test('ignores an answer that arrives while no review runs', async () => {
     deliver('agent-orphan', { reason: 'answer', answer: '```json\n{"overallSummary":"Stale","groups":[]}\n```' })

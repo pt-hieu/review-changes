@@ -564,6 +564,92 @@ details[open] > summary {
   line-height: 1.6;
 }
 
+.visual {
+  max-width: 82ch;
+  margin: 14px 0 4px;
+  padding: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.visual figcaption {
+  padding: 0 12px 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.visual-lines {
+  display: grid;
+  font: 12px/1.6 var(--mono);
+}
+
+.visual-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+button.visual-line {
+  cursor: pointer;
+}
+
+button.visual-line:hover,
+button.visual-line:focus-visible {
+  background: var(--accent-soft);
+}
+
+.visual-line[data-change='added'] {
+  background: color-mix(in srgb, var(--addition) 9%, transparent);
+}
+
+.visual-line[data-change='removed'] {
+  background: color-mix(in srgb, var(--deletion) 9%, transparent);
+}
+
+.visual-line[data-change='removed'] .visual-text {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--deletion) 50%, transparent);
+}
+
+.visual-marker {
+  flex: none;
+  width: 1ch;
+  font-weight: 600;
+}
+
+.visual-line[data-change='added'] .visual-marker {
+  color: var(--addition);
+}
+
+.visual-line[data-change='removed'] .visual-marker {
+  color: var(--deletion);
+}
+
+.visual-text {
+  margin-left: calc(var(--depth, 0) * 2ch);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.visual-location {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+button.visual-line:hover .visual-location {
+  color: var(--accent);
+}
+
 .callout {
   max-width: 82ch;
   margin: 16px 0 4px;

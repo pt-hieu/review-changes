@@ -1,4 +1,4 @@
-import type { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind } from './types.ts'
+import type { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind, ReviewVisualChange } from './types.ts'
 
 export const REVIEW_PAYLOAD_ELEMENT_ID = 'review-payload'
 
@@ -99,6 +99,24 @@ export type ReviewLineNote = {
   critical?: boolean
 }
 
+export type ReviewAnchor = {
+  path: string
+  side?: ReviewLineSide
+  line?: number
+}
+
+export type ReviewVisualLine = {
+  text: string
+  depth: number
+  change: ReviewVisualChange
+  anchor?: ReviewAnchor
+}
+
+export type ReviewVisual = {
+  caption: string
+  lines: ReviewVisualLine[]
+}
+
 export type ReviewGroup = {
   key: string
   label: string
@@ -107,6 +125,7 @@ export type ReviewGroup = {
   filePaths: string[]
   fileNotes: ReviewFileNote[]
   lineNotes: ReviewLineNote[]
+  visual?: ReviewVisual
   critical?: boolean
 }
 

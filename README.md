@@ -7,8 +7,8 @@ A Claude Code plugin, and the local marketplace that lists it, that helps you re
 Each run:
 
 1. Collects one target from the git repo the Claude Code session runs in: uncommitted changes, a branch, a commit, a range, or a pull request of that same repo.
-2. Has a read-only analyzer subagent (`review-changes:analyzer`, tools Read, Grep and Glob) group the changed files by concern. It summarises each group, notes what changed and why on files and lines, and flags the spots that deserve the closest look. Every changed file lands in exactly one group, and files the analyzer leaves out go to "Uncategorized".
-3. Writes one self-contained HTML page and opens it in the default browser. The page renders the diffs with [@pierre/diffs](https://diffs.com) and works offline. It has groups, file notes, inline line notes, a split/unified toggle, light and dark themes, and "reviewed" checkboxes that persist per file content.
+2. Has a read-only analyzer subagent (`review-changes:analyzer`, tools Read, Grep and Glob) group the changed files by concern. It reads what you asked for in the session, so it can explain why each change exists in your terms. It summarises each group, draws a small tree of how a group's new pieces connect when they span files, notes what changed and why on files and lines, and flags the spots that deserve the closest look. Every changed file lands in exactly one group, and files the analyzer leaves out go to "Uncategorized".
+3. Writes one self-contained HTML page and opens it in the default browser. The page renders the diffs with [@pierre/diffs](https://diffs.com) and works offline. It has groups, trees whose lines jump to the code they name, file notes, inline line notes, a split/unified toggle, light and dark themes, and "reviewed" checkboxes that persist per file content.
 4. Adds a short note to the session: the overall summary, the "review carefully" items, and the page's path. The model gets the same note fenced off as untrusted data, because a change's author can steer what the analyzer writes. It also asks the model to point you to the page rather than review the change itself.
 
 ## What it does not do

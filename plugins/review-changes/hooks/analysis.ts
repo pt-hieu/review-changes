@@ -1,18 +1,32 @@
 import type {
   ReviewAnalysis,
+  ReviewAnchor,
   ReviewFile,
   ReviewFileNote,
   ReviewGroup,
   ReviewLineNote,
   ReviewPayload,
+  ReviewVisual,
+  ReviewVisualLine,
 } from './payload.ts'
 import { countOf, totalLineCounts } from './counts.ts'
 import type { ReviewSource } from './git.ts'
-import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind } from './types.ts'
+import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind, ReviewVisualChange } from './types.ts'
 
 export const ANALYZER_AGENT = 'review-changes:analyzer'
 
 export const INLINE_DIFF_CHARACTER_LIMIT = 200_000
+
+export const USER_REQUESTS_TOTAL_CHARACTER_LIMIT = 12_000
+
+export const SINGLE_USER_REQUEST_CHARACTER_LIMIT = 4_000
+
+export const MAXIMUM_VISUAL_LINES = 40
+
+const UNTRUSTED_OPEN_MARKER = '<review-changes-analysis>'
+const UNTRUSTED_CLOSE_MARKER = '</review-changes-analysis>'
+
+export type SessionMessageText = { role: 'user' | 'assistant'; text: string }
 
 const STATUS_LETTERS: Record<ReviewFileStatus, string> = {
   [ReviewFileStatus.Added]: 'A',
@@ -108,11 +122,45 @@ function renderFileDiff(file: ReviewFile): string {
   return `${header}\n${body}`
 }
 
-export function buildAnalyzerPrompt(source: ReviewSource, files: ReviewFile[], patchPath: string): string {
+function truncateRequest(text: string): string {
+  return text.length <= SINGLE_USER_REQUEST_CHARACTER_LIMIT ? text : `${text.slice(0, SINGLE_USER_REQUEST_CHARACTER_LIMIT)}…`
+}
+
+function isUserRequest(message: SessionMessageText): boolean {
+  return message.role === 'user' && !message.text.includes(UNTRUSTED_OPEN_MARKER) && !/<command-name>\/?review-changes<\/command-name>/.test(message.text)
+}
+
+export function selectUserRequests(messages: SessionMessageText[]): string[] {
+  const requests = messages
+    .filter(isUserRequest)
+    .map(message => truncateRequest(message.text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim()))
+    .filter(request => request !== '')
+
+  const [firstRequest, ...laterRequests] = requests
+  if (firstRequest === undefined) return []
+
+  const keptLaterRequests: string[] = []
+  let characterCount = firstRequest.length
+  for (const request of laterRequests.reverse()) {
+    if (characterCount + request.length > USER_REQUESTS_TOTAL_CHARACTER_LIMIT) break
+
+    keptLaterRequests.unshift(request)
+    characterCount += request.length
+  }
+
+  return [firstRequest, ...keptLaterRequests]
+}
+
+export function buildAnalyzerPrompt(source: ReviewSource, files: ReviewFile[], patchPath: string, userRequests: string[] = []): string {
   const parts = [`Title: ${source.title}\nTarget: ${source.target.label}`]
   if (source.target.kind === ReviewTargetKind.PullRequest) parts[0] += `\nPR link: ${source.target.url}`
 
   if (source.description) parts.push(`---DESCRIPTION---\n${source.description}`)
+
+  if (userRequests.length > 0) {
+    const requestBlocks = userRequests.map((request, index) => `[${index + 1}]\n${request}`)
+    parts.push(`---USER REQUESTS--- (${userRequests.length}, oldest first)\n${requestBlocks.join('\n\n')}`)
+  }
 
   const commitsAddToTheTitle = source.commits.length > 1
   if (commitsAddToTheTitle) {
@@ -171,6 +219,63 @@ function isInsideHunkOfSide(file: ReviewFile, side: ReviewLineSide, line: number
   })
 }
 
+const VISUAL_ANCHOR_PATTERN = /\s*\(([^()\s]+?)(?::(\d+))?\)$/
+
+type RawVisualLine = { text: string; indentation: number; change: ReviewVisualChange; anchor?: ReviewAnchor }
+
+function visualChangeOf(marker: string): ReviewVisualChange {
+  if (marker === '+') return ReviewVisualChange.Added
+  if (marker === '-') return ReviewVisualChange.Removed
+
+  return ReviewVisualChange.Unchanged
+}
+
+function anchorOf(file: ReviewFile, change: ReviewVisualChange, line: string | undefined): ReviewAnchor {
+  const side = change === ReviewVisualChange.Removed ? ReviewLineSide.Deletions : ReviewLineSide.Additions
+  const lineNumber = line === undefined ? Number.NaN : Number(line)
+
+  if (Number.isInteger(lineNumber) && isInsideHunkOfSide(file, side, lineNumber)) return { path: file.path, side, line: lineNumber }
+
+  return { path: file.path }
+}
+
+function parseVisualLine(rawLine: string, filesByPath: Map<string, ReviewFile>): RawVisualLine {
+  const expanded = rawLine.replace(/\t/g, '  ').trimEnd()
+  const marker = expanded.charAt(0)
+  const change = visualChangeOf(marker)
+  const body = change !== ReviewVisualChange.Unchanged || marker === ' ' ? expanded.slice(1) : expanded
+  const indentation = body.length - body.trimStart().length
+  const text = body.trim()
+
+  const anchorMatch = VISUAL_ANCHOR_PATTERN.exec(text)
+  const file = anchorMatch ? filesByPath.get(anchorMatch[1] ?? '') : undefined
+  if (!anchorMatch || !file) return { text, indentation, change }
+
+  const textWithoutAnchor = text.slice(0, anchorMatch.index).trim()
+  return { text: textWithoutAnchor || file.path, indentation, change, anchor: anchorOf(file, change, anchorMatch[2]) }
+}
+
+function parseVisual(rawVisual: unknown, filesByPath: Map<string, ReviewFile>): ReviewVisual | undefined {
+  if (!isRecord(rawVisual) || !Array.isArray(rawVisual.lines)) return undefined
+
+  const rawLines = rawVisual.lines
+    .filter((line): line is string => typeof line === 'string' && line.trim() !== '')
+    .slice(0, MAXIMUM_VISUAL_LINES)
+    .map(line => parseVisualLine(line, filesByPath))
+  if (rawLines.length === 0) return undefined
+
+  const baseIndentation = Math.min(...rawLines.map(line => line.indentation))
+  const relativeIndentations = rawLines.map(line => line.indentation - baseIndentation)
+  const indentationStep = Math.min(...relativeIndentations.filter(indentation => indentation > 0), Number.POSITIVE_INFINITY)
+
+  const lines = rawLines.map(({ indentation, ...line }): ReviewVisualLine => ({
+    ...line,
+    depth: Number.isFinite(indentationStep) ? Math.round((indentation - baseIndentation) / indentationStep) : 0,
+  }))
+
+  return { caption: typeof rawVisual.caption === 'string' ? rawVisual.caption.trim() : '', lines }
+}
+
 function uncategorizedGroup(key: string, filePaths: string[]): ReviewGroup {
   return { key, label: 'Uncategorized', category: ReviewCategory.Other, summary: '', filePaths, fileNotes: [], lineNotes: [] }
 }
@@ -227,6 +332,9 @@ function normalizeAnalysis(overallSummary: unknown, rawGroups: unknown[], files:
       fileNotes: [],
       lineNotes: [],
     }
+
+    const visual = parseVisual(record.visual, filesByPath)
+    if (visual) group.visual = visual
 
     if (record.critical === true) group.critical = true
 
@@ -346,9 +454,6 @@ export function buildSessionNote(payload: ReviewPayload, htmlPath: string): stri
 
   return lines.join('\n')
 }
-
-const UNTRUSTED_OPEN_MARKER = '<review-changes-analysis>'
-const UNTRUSTED_CLOSE_MARKER = '</review-changes-analysis>'
 
 export function buildModelNoteWithUntrustedAnalysis(payload: ReviewPayload, htmlPath: string): string {
   const { files, analysis } = payload

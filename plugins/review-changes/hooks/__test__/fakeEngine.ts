@@ -1,4 +1,5 @@
 import { NoticeType } from '../types.ts'
+import type { SessionMessageText } from '../analysis.ts'
 import type { ReviewEngine } from '../review.ts'
 import { createFakeRunCommand, createRepository } from './fakeGit.ts'
 import type { FakeEnvironment } from './fakeGit.ts'
@@ -37,7 +38,12 @@ export const VIEWER_ASSETS: Record<string, string> = {
 
 export function fakeEngine(
   spawned: Awaited<ReturnType<ReviewEngine['spawnAnalyzer']>>,
-  { assets = VIEWER_ASSETS, shouldOpenBrowser = true, environment = worktreeEnvironment() }: { assets?: Record<string, string>; shouldOpenBrowser?: boolean; environment?: FakeEnvironment } = {},
+  {
+    assets = VIEWER_ASSETS,
+    shouldOpenBrowser = true,
+    environment = worktreeEnvironment(),
+    sessionMessages = [],
+  }: { assets?: Record<string, string>; shouldOpenBrowser?: boolean; environment?: FakeEnvironment; sessionMessages?: SessionMessageText[] } = {},
 ) {
   const world = {
     written: new Map<string, string>(),
@@ -48,12 +54,14 @@ export function fakeEngine(
     last: null as Parameters<ReviewEngine['writeLast']>[0] | null,
     candidate: null as Awaited<ReturnType<ReviewEngine['readCandidate']>>,
     pendingTimers: [] as Array<() => void>,
+    analyzerPrompts: [] as string[],
   }
   const engine: ReviewEngine = {
     pluginDirectory: '/plugin',
     runCommand: createFakeRunCommand(environment, world.openedInBrowser),
     shouldOpenBrowser: async () => shouldOpenBrowser,
     sessionWorkingDirectory: async () => '/repo',
+    readSessionMessages: async () => sessionMessages,
     readFile: async path => {
       const text = assets[path]
       if (text === undefined) throw new Error('ENOENT')
@@ -62,7 +70,10 @@ export function fakeEngine(
     writeFile: async (path, text) => {
       world.written.set(path, text)
     },
-    spawnAnalyzer: async () => spawned,
+    spawnAnalyzer: async request => {
+      world.analyzerPrompts.push(request.prompt)
+      return spawned
+    },
     now: async () => Date.UTC(2026, 9, 7, 12),
     after: (milliseconds, callback) => {
       world.pendingTimers.push(callback)

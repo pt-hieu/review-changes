@@ -11,6 +11,12 @@ export enum ReviewLineSide {
   Deletions = 'deletions',
 }
 
+export enum ReviewVisualChange {
+  Added = 'added',
+  Removed = 'removed',
+  Unchanged = 'unchanged',
+}
+
 export enum ReviewCategory {
   Ui = 'ui',
   Api = 'api',

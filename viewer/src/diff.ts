@@ -8,7 +8,29 @@ import type { DiffLayout } from './types.ts'
 
 export type MountedDiff = {
   setLayout(layout: DiffLayout): void
+  revealLine(side: ReviewLineSide, line: number): void
   destroy(): void
+}
+
+const FRAMES_TO_WAIT_FOR_SELECTED_LINE = 60
+
+function findSelectedLine(container: HTMLElement): Element | null {
+  for (const host of container.querySelectorAll('*')) {
+    const selectedLine = host.shadowRoot?.querySelector('[data-selected-line]')
+    if (selectedLine) return selectedLine
+  }
+
+  return null
+}
+
+function scrollToSelectedLine(container: HTMLElement, framesLeft = FRAMES_TO_WAIT_FOR_SELECTED_LINE): void {
+  const selectedLine = findSelectedLine(container)
+  if (selectedLine) {
+    selectedLine.scrollIntoView({ block: 'center' })
+    return
+  }
+
+  if (framesLeft > 0) requestAnimationFrame(() => scrollToSelectedLine(container, framesLeft - 1))
 }
 
 function baseOptions(layout: DiffLayout) {
@@ -61,6 +83,10 @@ export function mountDiff(
     setLayout(nextLayout) {
       instance.setOptions({ ...instance.options, diffStyle: nextLayout })
       instance.rerender()
+    },
+    revealLine(side, line) {
+      instance.setSelectedLines({ start: line, end: line, side })
+      scrollToSelectedLine(container)
     },
     destroy() {
       instance.cleanUp()

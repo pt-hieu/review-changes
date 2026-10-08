@@ -35,6 +35,7 @@ function reviewEngineOf($: EngineInterface): ReviewEngine {
     runCommand: (commandArguments, options) => $.process.run(commandArguments, options),
     shouldOpenBrowser: async () => !(await $.env.get('REVIEW_CHANGES_NO_OPEN')),
     sessionWorkingDirectory: () => $.session.cwd(),
+    readSessionMessages: () => $.session.messages(),
     readFile: path => $.fs.read(path),
     writeFile: async (path, text) => {
       await $.fs.write(path, text)

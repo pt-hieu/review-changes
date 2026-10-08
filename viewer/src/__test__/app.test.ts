@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { ReviewCategory, ReviewFileStatus, ReviewTargetKind } from '../../../plugins/review-changes/hooks/types.ts'
+import {
+  ReviewCategory,
+  ReviewFileStatus,
+  ReviewLineSide,
+  ReviewTargetKind,
+  ReviewVisualChange,
+} from '../../../plugins/review-changes/hooks/types.ts'
 import type { ReviewFile, ReviewPayload } from '../../../plugins/review-changes/hooks/payload.ts'
 import { startViewer } from '../app.ts'
 import { readLayout } from '../storage.ts'
@@ -196,6 +202,32 @@ describe('startViewer', () => {
 
     expect(visibleText()).toContain('Handles <b>money</b>.')
     expect(root.querySelector('b')).toBeNull()
+  })
+
+  test('draws a group’s picture as text, and a tied line opens the code it names', () => {
+    const payload = buildPayload()
+    const coreGroup = payload.analysis.groups[0]
+    if (!coreGroup) throw new Error('no core group')
+    coreGroup.visual = {
+      caption: 'How checkout flows',
+      lines: [
+        { text: 'checkout <b>now</b>', depth: 0, change: ReviewVisualChange.Unchanged },
+        { text: 'documented', depth: 1, change: ReviewVisualChange.Added, anchor: { path: 'docs/readme.md', side: ReviewLineSide.Additions, line: 1 } },
+      ],
+    }
+
+    startViewer(root, payload)
+
+    expect(visibleText()).toContain('How checkout flows')
+    expect(visibleText()).toContain('checkout <b>now</b>')
+    expect(root.querySelector('b')).toBeNull()
+
+    const tiedLine = root.querySelector<HTMLButtonElement>('button.visual-line')
+    if (!tiedLine) throw new Error('no tied line')
+    tiedLine.click()
+
+    expect(root.querySelector('.group h2')?.textContent).toBe('Documentation')
+    expect(root.querySelector('.file-card.is-focused')?.getAttribute('data-path')).toBe('docs/readme.md')
   })
 
   test('flags a group that has a critical note', () => {

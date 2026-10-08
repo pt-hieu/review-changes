@@ -166,6 +166,8 @@ The system prompt adapts pulls.review's `ROLE_SECTION` + `grouping_principles` +
 - No `children` (groups are flat).
 - The workflow: (1) read the manifest and form a grouping hypothesis; (2) Read files of the repository only where the hunks are not enough, and the patch file only when the diffs are not inline; never read `[generated]`/`[binary]` paths; never modify anything; (3) answer with ONE fenced ```json block holding the analysis and nothing else.
 - It writes notes that explain what changed and why, and sets `critical` only where the human should look most carefully. **No verdicts, no scores, no approval language, no fix suggestions written as patches.**
+- A `<user_requests>` section: when the prompt lists the user's requests, the "why" of a group is written in the human's terms. The requests explain the change; they are not a checklist to grade it against.
+- An optional per-group `visual`: an indented tree (call tree, file tree, component tree or pseudocode) of at most 40 lines, drawn only when the shape spans more than one file or several distant hunks. Column 0 of each line is `+`, `-` or a space; two spaces per level follow; a trailing `(path:line)` or `(path)` ties the line to the code.
 - It embeds the JSON shape below verbatim (types + field rules + the category guide from pulls.review `types/analyze.ts` `CATEGORY_GUIDE`).
 
 The answer shape the agent must produce:
@@ -180,22 +182,25 @@ The answer shape the agent must produce:
     "filePaths": ["every manifest path in exactly one group"],
     "fileNotes": [{ "path": "...", "text": "...", "critical": true }],
     "lineNotes": [{ "path": "...", "side": "additions|deletions", "line": 12, "text": "...", "critical": true }],
+    "visual": { "caption": "...", "lines": [" handle (src/api/routes.ts)", "+  GET /notes/search → searchNotes (src/api/routes.ts:7)"] },
     "critical": true
   }]
 }
 ```
-`fileNotes`, `lineNotes` and `critical` are optional and used sparingly.
+`fileNotes`, `lineNotes`, `visual` and `critical` are optional and used sparingly. The model writes `visual.lines` as indented text because it indents reliably and counts depth poorly; the parser turns them into the payload's structured `ReviewVisual`, so the prompt syntax can change without a payload schema change.
 
 ### 5.2 Prompt and parsing (`hooks/analysis.ts`, pure)
 
 ```ts
 export const ANALYZER_AGENT = 'review-changes:analyzer'
 export const INLINE_DIFF_CHARACTER_LIMIT = 200_000
-export function buildAnalyzerPrompt(source: ReviewSource, files: ReviewFile[], patchPath: string): string
+export function selectUserRequests(messages: SessionMessageText[]): string[]
+export function buildAnalyzerPrompt(source: ReviewSource, files: ReviewFile[], patchPath: string, userRequests: string[] = []): string
 export function parseAnalyzerAnswer(answer: string, files: ReviewFile[]): { analysis: ReviewAnalysis; error?: string }
 export function fallbackAnalysis(files: ReviewFile[], reason: string): ReviewAnalysis
 ```
-- **Prompt** (pulls.review `buildAnalysisPrompt` adapted): `Title:`, `Target: <label>`, PR URL, `---DESCRIPTION---`, `---COMMITS---` (only if > 1), `---MANIFEST--- (N files, +A/-D)` grouped by directory, with lines `basename (from old)  A|D|M|R|C  +a/-d  [generated]|[binary]|@@ ctx / @@ ctx` (generated = lockfiles, `dist/`, `*.min.*`, `*.snap`, a short glob list), then either `---DIFFS--- (all diffs included)` with each file's hunks (`### path [status, +a/-d]`, generated/binary bodies omitted) when ≤ `INLINE_DIFF_CHARACTER_LIMIT`, or `The full patch is at <patchPath>; Read the parts you need.` It closes with `The repository is checked out at the working directory; Read files there when the hunks are not enough. Answer with one fenced json block.`
+- **User requests**: `selectUserRequests` keeps the user-role messages of `$.session.messages()` with text, oldest first. It strips `<system-reminder>` blocks and leaves out the plugin's own model note (it holds `<review-changes-analysis>`) and `/review-changes` invocations. Each request is cut to 4,000 characters; past 12,000 in total it keeps the first request and as many of the newest as fit.
+- **Prompt** (pulls.review `buildAnalysisPrompt` adapted): `Title:`, `Target: <label>`, PR URL, `---DESCRIPTION---`, `---USER REQUESTS--- (N, oldest first)` with `[1]`, `[2]`… blocks (only when there are requests), `---COMMITS---` (only if > 1), `---MANIFEST--- (N files, +A/-D)` grouped by directory, with lines `basename (from old)  A|D|M|R|C  +a/-d  [generated]|[binary]|@@ ctx / @@ ctx` (generated = lockfiles, `dist/`, `*.min.*`, `*.snap`, a short glob list), then either `---DIFFS--- (all diffs included)` with each file's hunks (`### path [status, +a/-d]`, generated/binary bodies omitted) when ≤ `INLINE_DIFF_CHARACTER_LIMIT`, or `The full patch is at <patchPath>; Read the parts you need.` It closes with `The repository is checked out at the working directory; Read files there when the hunks are not enough. Answer with one fenced json block.`
 - **Parsing**: take the last fenced ```json block, else the substring from the first `{` to the last `}`, and `JSON.parse`. Not an object with `groups` array → `{ analysis: fallbackAnalysis(files, reason), error: reason }`.
 - **Normalisation** (always applied):
   - `overallSummary` not a string → "".
@@ -203,6 +208,7 @@ export function fallbackAnalysis(files: ReviewFile[], reason: string): ReviewAna
   - `filePaths`: keep only paths of `files`, first occurrence across groups wins.
   - fileNotes/lineNotes: keep only those whose path is in THAT group's kept `filePaths` and whose `text` is a non-empty string. A note pointing at a file of another group moves to that group. `critical` kept only when `=== true`.
   - lineNote: `line` must be an integer inside a hunk of its side (additions: `newStart ≤ line < newStart + newLines`; deletions: same with old). Otherwise it becomes a fileNote `"(line <n>) <text>"`.
+  - `visual`: kept only with a `lines` array. Non-string and blank lines are dropped, at most 40 are kept, and no lines means no visual. Per line: tabs become two spaces; column 0 gives `change` (`+` added, `-` removed, anything else unchanged, and a leading space is the marker column); depth is the indentation minus the smallest one, divided by the smallest non-zero step. A trailing `(path:line)` or `(path)` whose path is a payload file becomes `anchor` and leaves the text; `side` is `deletions` for a removed line and `additions` otherwise, and a line outside every hunk of that side gives a path-only anchor. A token naming no payload file stays in the text. `caption` not a string → "".
   - Drop groups left with no files.
   - Files in no group → a final group `{ key: 'uncategorized', label: 'Uncategorized', category: 'other', summary: '', filePaths: [...in patch order], fileNotes: [], lineNotes: [] }`.
 - **fallbackAnalysis**: overallSummary = `Automatic grouping failed: <reason>. All files are listed below.`; one Uncategorized group with all files.
@@ -256,7 +262,7 @@ await Bun.build({ entrypoints: ['viewer/src/main.ts'], target: 'browser', format
 - **Header**: title; target label + repo name; commit count; `+A −D` totals; `R / M reviewed`; unified/split toggle (persisted in localStorage `review-changes:layout`); "collapse reviewed" toggle.
 - **Overall summary** (Markdown) under the header. Commit list collapsible. PR description collapsible.
 - **Left sidebar**: groups in analysis order, each with category chip, label, file count, a reviewed count, and a critical marker. Under the active group, its file tree (directories folded into paths) with a reviewed checkbox per file. A filter box narrows the list by path.
-- **Main**: the active group's summary + "review carefully" callouts (critical group/notes), then each file of the group. A file header has the path (old → new for renames), status, `+a −d`, a reviewed checkbox, and the file notes (critical ones highlighted) above the diff. The diff renders with line notes as annotations. Files with `isPatchOmitted` or `isBinary` show a one-line placeholder instead.
+- **Main**: the active group's summary, its visual (a `figure` of monospaced rows, each indented by depth with a `+`/`−` marker; a row with an anchor is a button showing `file:line` on the right), the "review carefully" callouts (critical group/notes), then each file of the group. Clicking an anchored row or a callout location jumps there: a path-only anchor opens and focuses the file, switching group when needed; a line anchor also mounts the diff at once and calls `FileDiff.setSelectedLines({ start, end, side })`, then scrolls the `[data-selected-line]` element in the diff's open shadow root into view once it renders. A file header has the path (old → new for renames), status, `+a −d`, a reviewed checkbox, and the file notes (critical ones highlighted) above the diff. The diff renders with line notes as annotations. Files with `isPatchOmitted` or `isBinary` show a one-line placeholder instead.
 - **Reviewed state**: localStorage key `review-changes:v1:<repository.root>:<target.key>:<file.path>:<file.patchHash>` = `"1"`. Checking a file collapses it when "collapse reviewed" is on, and updates the counters live.
 - **Markdown**: a tiny safe renderer (escape HTML first; then code spans, fenced code, bold/italic, links with http(s) only, paragraphs, lists). No dependency, no innerHTML of unescaped text.
 - Light/dark from `prefers-color-scheme` via CSS variables; the diff follows with `themeType: 'system'`.
@@ -297,7 +303,7 @@ export async function startReview($: EngineInterface, argumentText: string): Pro
 3. `runId = crypto.randomUUID()`, `activeRunId = runId`, `update(run, { runId, label: 'current changes', phase: 'collecting' })`.
 4. `source = await resolveReviewSource($.process.run, await $.session.cwd(), request)`, then `files = await buildReviewFiles(source.patch)`. On `ReviewSourceError`, clear the run and return `{ text: message }`.
 5. `outputDirectory = <source.gitCommonDirectory>/review-changes`; `patchPath = <outputDirectory>/<slug>.patch`; `await $.fs.write(patchPath, source.patch)`.
-6. `spawned = await $.agent.spawn({ subagentType: ANALYZER_AGENT, description: 'Group changes for review', prompt: buildAnalyzerPrompt(source, files, patchPath), cwd: source.repository.root })`. If `deny` or no `agentId`, continue with `fallbackAnalysis(files, deny ?? 'the analyzer did not start')`. Do not stop: the page is still useful.
+6. `spawned = await $.agent.spawn({ subagentType: ANALYZER_AGENT, description: 'Group changes for review', prompt: buildAnalyzerPrompt(source, files, patchPath, selectUserRequests(await $.session.messages())), cwd: source.repository.root })`. A session that cannot be read gives no requests. If `deny` or no `agentId`, continue with `fallbackAnalysis(files, deny ?? 'the analyzer did not start')`. Do not stop: the page is still useful.
 7. Phase `analyzing`. Start `void finishReview($, ...)`, then return `{ text: 'Reviewing <label> (<N> files, +A/−D). The page opens when the analysis is done.' }`.
 
 ```ts

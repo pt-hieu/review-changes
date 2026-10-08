@@ -44,7 +44,6 @@ export function fakeEngine(
     openedInBrowser: [] as string[],
     notices: [] as Array<{ type: NoticeType; text: string }>,
     toasts: [] as string[],
-    status: undefined as string | undefined,
     run: null as Awaited<ReturnType<ReviewEngine['readRun']>>,
     last: null as Parameters<ReviewEngine['writeLast']>[0] | null,
     candidate: null as Awaited<ReturnType<ReviewEngine['readCandidate']>>,
@@ -68,9 +67,6 @@ export function fakeEngine(
     after: (milliseconds, callback) => {
       world.pendingTimers.push(callback)
       return { cancel: () => world.pendingTimers.splice(world.pendingTimers.indexOf(callback), 1) }
-    },
-    setStatus: text => {
-      world.status = text
     },
     toast: text => {
       world.toasts.push(text)

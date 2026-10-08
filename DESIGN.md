@@ -27,7 +27,7 @@ review-changes/                         repo root = the marketplace
     agents/analyzer.md                  agent type `review-changes:analyzer`
     assets/viewer.js, assets/viewer.css committed build output, inlined into each review
     hooks/hooks.json                    { "modules": ["./register.tsx"] }
-    hooks/register.tsx                  wiring: command, band, agent wait, status/toast, note
+    hooks/register.tsx                  wiring: command, band, agent wait, toast, note
     hooks/payload.ts                    THE shared contract (types only + two constants), imported by viewer too
     hooks/types.ts                      the plugin's string enums (file status, line side, category, target kinds, notice type, git path prefix)
     hooks/target.ts                     argument grammar → TargetRequest (pure)
@@ -59,7 +59,7 @@ A review's output never lands in the working tree: `<git-common-dir>/review-chan
 | agent type | `agents/analyzer.md` declares `review-changes:analyzer` (frontmatter as an agent file; `$.agent.register(spec)` is the programmatic twin with the same fields: `name, description, prompt, tools, model, maxTurns, omitClaudeMd, permissionMode, ...`). Hide it from the main model: `on('agent.offer', { agent: 'review-changes:analyzer' }, () => ({ isOffered: false }))`. The plugin's own spawn still runs. |
 | spawn | `$.agent.spawn({ prompt, description, subagentType: 'review-changes:analyzer', cwd? , model? })` resolves once STARTED with `{ model, agentId }` or `{ deny }`. A plugin's spawn always runs in the background. The answer arrives as that agent's `turn.complete`: `on('turn.complete', ($, e, next) => ...)` with `e.agentId === agentId`, `e.answer` (final text), `e.reason: 'answer'|'aborted'|'refusal'|'error'`. Always `return next(e)`. There is no structured output: parse JSON out of `e.answer`. |
 | note in session | `$.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } })` is a notice the person sees and the model never reads (exactly one text block). `type: 'user'` is a hidden row the model reads. Text blocks only. |
-| status / toast | `$.ui.status(text \| undefined)`: one pinned line per plugin; `undefined` clears it. `$.ui.toast(text, { timeoutMs })`: default 4000. |
+| toast | `$.ui.toast(text, { timeoutMs })`: default 4000. The mod never calls `$.ui.status`: the band already shows the run. |
 | timers | `$.clock.every(ms, fn)` / `$.clock.after(ms, fn)` return `{ cancel() }`; dropped on hot reload. `$` captured by a hook stays usable after the hook returns (timers and continuations use it). |
 | budget | 10 s per hook dispatch, **excluding time awaiting `$` calls**. Awaiting a plain promise (the agent's answer) counts, so the command hook must not await the analysis: it returns after the spawn and the rest continues in the background. |
 | reload | Module variables are lost on hot reload; `$.state` values survive. A `session.start` hook runs once per session. |
@@ -265,7 +265,7 @@ await Bun.build({ entrypoints: ['viewer/src/main.ts'], target: 'browser', format
 
 ## 7. Mod flow (`hooks/review.ts` + `hooks/register.tsx`)
 
-The engine follows `$` only into functions declared in the same file as the hook, never across an import. So `review.ts` never takes `$`: it drives a `ReviewEngine` of closures (process runner, session cwd, file read/write, analyzer spawn, clock, status, toast, notices, state reads and writes, `shouldOpenBrowser`) that `reviewEngineOf($)` in `register.tsx` builds. The `$`-shaped signatures below stand for that engine. Tests drive `review.ts` through an in-memory `ReviewEngine`.
+The engine follows `$` only into functions declared in the same file as the hook, never across an import. So `review.ts` never takes `$`: it drives a `ReviewEngine` of closures (process runner, session cwd, file read/write, analyzer spawn, clock, toast, notices, state reads and writes, `shouldOpenBrowser`) that `reviewEngineOf($)` in `register.tsx` builds. The `$`-shaped signatures below stand for that engine. Tests drive `review.ts` through an in-memory `ReviewEngine`.
 
 State atoms (contract in `types/index.d.ts`):
 ```ts
@@ -294,11 +294,11 @@ export async function startReview($: EngineInterface, argumentText: string): Pro
 ```
 1. If a run is active, return `{ text: 'A review is already running: <label>.' }`.
 2. `parseTargetArgument(argumentText)`. On `TargetError`, return `{ text: '<message>\nUsage: /review-changes [--worktree | #<pr> | <pr url> | <branch> | <rev> | A...B | A..B]' }`.
-3. `runId = crypto.randomUUID()`, `activeRunId = runId`, `update(run, { runId, label: 'current changes', phase: 'collecting' })`, `$.ui.status('review-changes: collecting the diff…')`.
-4. `source = await resolveReviewSource($.process.run, await $.session.cwd(), request)`, then `files = await buildReviewFiles(source.patch)`. On `ReviewSourceError`, clear the run and the status and return `{ text: message }`.
+3. `runId = crypto.randomUUID()`, `activeRunId = runId`, `update(run, { runId, label: 'current changes', phase: 'collecting' })`.
+4. `source = await resolveReviewSource($.process.run, await $.session.cwd(), request)`, then `files = await buildReviewFiles(source.patch)`. On `ReviewSourceError`, clear the run and return `{ text: message }`.
 5. `outputDirectory = <source.gitCommonDirectory>/review-changes`; `patchPath = <outputDirectory>/<slug>.patch`; `await $.fs.write(patchPath, source.patch)`.
 6. `spawned = await $.agent.spawn({ subagentType: ANALYZER_AGENT, description: 'Group changes for review', prompt: buildAnalyzerPrompt(source, files, patchPath), cwd: source.repository.root })`. If `deny` or no `agentId`, continue with `fallbackAnalysis(files, deny ?? 'the analyzer did not start')`. Do not stop: the page is still useful.
-7. Phase `analyzing`, status `review-changes: analysing <N> files with <model>…`. Start `void finishReview($, ...)`, then return `{ text: 'Reviewing <label> (<N> files, +A/−D). The page opens when the analysis is done.' }`.
+7. Phase `analyzing`. Start `void finishReview($, ...)`, then return `{ text: 'Reviewing <label> (<N> files, +A/−D). The page opens when the analysis is done.' }`.
 
 ```ts
 async function finishReview($, { runId, source, files, agentId, model, outputDirectory })
@@ -319,7 +319,7 @@ async function finishReview($, { runId, source, files, agentId, model, outputDir
    ```
    Leave out "Review carefully:" when nothing is critical. Add `Analysis failed: <error>` when `analysisError` is set.
 7. `$.ui.toast('Review ready: <label>', { timeoutMs: 6000 })`.
-8. `finally`: clear `run`, `activeRunId`, the status, the waiter; `refreshCandidate`.
+8. `finally`: clear `run`, `activeRunId`, the waiter; `refreshCandidate`.
 9. Any throw in finishReview → `$.ui.toast('review-changes failed: <message>', { timeoutMs: 8000 })` + a system notice with the same text.
 
 `startReviewWithToast($, args)` (for the button) runs `startReview` and toasts its `text`.

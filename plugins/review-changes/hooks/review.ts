@@ -30,7 +30,6 @@ export type ReviewEngine = {
   }>
   now: () => Promise<number>
   after: (milliseconds: number, callback: () => void) => { cancel: () => void }
-  setStatus: (text: string | undefined) => void
   toast: (text: string, timeoutMilliseconds: number) => void
   appendNotice: (text: string, type: NoticeType) => Promise<void>
   readRun: () => Promise<RunState>
@@ -109,7 +108,6 @@ function registerAnswerWaiterSynchronously(
 async function clearRun(engine: ReviewEngine, runId: string): Promise<void> {
   if (runIdStartedByThisModuleLife === runId) runIdStartedByThisModuleLife = null
 
-  engine.setStatus(undefined)
   await engine.updateRun(current => (current?.runId === runId ? null : current))
 }
 
@@ -151,7 +149,6 @@ async function collectAndAnalyze(
   request: ReturnType<typeof parseTargetArgument>,
 ): Promise<StartedReview> {
   await engine.updateRun(() => ({ runId, label: 'current changes', phase: 'collecting' }))
-  engine.setStatus('review-changes: collecting the diff…')
 
   let source: ReviewSource
   let files: ReviewFile[]
@@ -194,11 +191,6 @@ async function collectAndAnalyze(
   }
 
   await engine.updateRun(() => ({ runId, label, phase: 'analyzing' }))
-  engine.setStatus(
-    answer
-      ? `review-changes: analysing ${countOf(files.length, 'file')} with ${model ?? 'the analyzer'}…`
-      : 'review-changes: writing the page…',
-  )
 
   const completion = finishReview(engine, {
     runId,
@@ -269,7 +261,6 @@ async function finishReview(
     }
 
     await engine.updateRun(current => (current?.runId === runId ? { runId, label, phase: 'writing' } : current))
-    engine.setStatus('review-changes: writing the page…')
 
     const viewerScript = await readViewerAsset(engine, 'viewer.js')
     const viewerStyle = await readViewerAsset(engine, 'viewer.css')

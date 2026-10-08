@@ -58,7 +58,7 @@ When the repo has changes worth reviewing (uncommitted files, or commits ahead o
 - **Open last review** (`o`): reopens the last page in the browser.
 - **Hide**: hides the band.
 
-While a review runs, the band and the status line show its progress, and a toast reports when the page is ready or the run failed.
+While a review runs, the band shows its progress, and a toast reports when the page is ready or the run failed.
 
 ## Output
 

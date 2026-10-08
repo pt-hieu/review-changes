@@ -162,7 +162,6 @@ describe('a review run', () => {
     expect(started.text).toContain('Reviewing Uncommitted changes on main')
     expect(started.text).toContain('1 file')
     expect(world.run?.label).toBe('Uncommitted changes on main')
-    expect(world.status).toContain('claude-sonnet')
 
     deliver('agent-grouped', GROUPED_ANSWER)
     await started.completion
@@ -200,7 +199,6 @@ describe('a review run', () => {
     expect(world.openedInBrowser).toStrictEqual([HTML_PATH])
     expect(world.last).toStrictEqual({ label: 'Uncommitted changes on main', htmlPath: HTML_PATH })
     expect(world.run).toBe(null)
-    expect(world.status).toBeUndefined()
     expect(world.candidate).toStrictEqual({ summary: '1 uncommitted file' })
   })
 

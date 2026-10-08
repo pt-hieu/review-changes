@@ -42,7 +42,6 @@ function reviewEngineOf($: EngineInterface): ReviewEngine {
     spawnAnalyzer: request => $.agent.spawn({ subagentType: ANALYZER_AGENT, ...request }),
     now: () => $.clock.now(),
     after: (milliseconds, callback) => $.clock.after(milliseconds, callback),
-    setStatus: text => $.ui.status(text),
     toast: (text, timeoutMilliseconds) => $.ui.toast(text, { timeoutMs: timeoutMilliseconds }),
     appendNotice: async (text, type) => {
       await $.session.append({ message: { type, content: [{ type: 'text', text }] } })

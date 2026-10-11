@@ -111,6 +111,9 @@ export const register: Register = on => {
     if (!isRunning && offer === null && lastReview === null) return next(e)
 
     const { Box, Button, Text } = $.ui.resolve(e)
+    // The band is one site shared by every plugin's hook; drawing without
+    // next(e) would hide the bands of the plugins after this one.
+    const otherBands = await next(e)
     const buttonWidths = [
       HIDE_BUTTON_COLUMNS,
       ...(lastReview ? [OPEN_LAST_BUTTON_COLUMNS] : []),
@@ -120,37 +123,40 @@ export const register: Register = on => {
     const textColumns = Math.max(0, e.props.bodyColumns - buttonColumns)
 
     return (
-      <Box flexDirection="row" marginTop={1} columnGap={BAND_GAP_COLUMNS}>
-        {isRunning ? (
-          <Text key="progress" dimColor wrap="truncate">
-            {truncate(`Reviewing ${runningReview.label}: ${runningReview.phase}…`, textColumns)}
-          </Text>
-        ) : offer ? (
-          <Text key="summary" dimColor wrap="truncate">
-            {truncate(offer.summary, textColumns)}
-          </Text>
-        ) : null}
-        {!isRunning && offer ? (
-          <Button
-            key="review"
-            label="Review changes"
-            variant="primary"
-            hotkey="r"
-            onPress={() => void startReviewWithToast(reviewEngineOf($), '')}
-          />
-        ) : null}
-        {lastReview ? (
-          <Button
-            key="open-last"
-            label="Open last review"
-            hotkey="o"
-            onPress={() => void openInBrowser(
-                (commandArguments, options) => $.process.run(commandArguments, options),
-                lastReview.htmlPath,
-              )}
-          />
-        ) : null}
-        <Button key="hide" label="Hide" dimColor onPress={() => update($, isHidden, () => true)} />
+      <Box flexDirection="column">
+        {otherBands}
+        <Box flexDirection="row" marginTop={1} columnGap={BAND_GAP_COLUMNS}>
+          {isRunning ? (
+            <Text key="progress" dimColor wrap="truncate">
+              {truncate(`Reviewing ${runningReview.label}: ${runningReview.phase}…`, textColumns)}
+            </Text>
+          ) : offer ? (
+            <Text key="summary" dimColor wrap="truncate">
+              {truncate(offer.summary, textColumns)}
+            </Text>
+          ) : null}
+          {!isRunning && offer ? (
+            <Button
+              key="review"
+              label="Review changes"
+              variant="primary"
+              hotkey="r"
+              onPress={() => void startReviewWithToast(reviewEngineOf($), '')}
+            />
+          ) : null}
+          {lastReview ? (
+            <Button
+              key="open-last"
+              label="Open last review"
+              hotkey="o"
+              onPress={() => void openInBrowser(
+                  (commandArguments, options) => $.process.run(commandArguments, options),
+                  lastReview.htmlPath,
+                )}
+            />
+          ) : null}
+          <Button key="hide" label="Hide" dimColor onPress={() => update($, isHidden, () => true)} />
+        </Box>
       </Box>
     )
   })

@@ -82,7 +82,7 @@ describe('/review-changes', () => {
 
 for (const surface of ['terminal', 'desktop'] as const) {
   describe(`the band above the prompt on ${surface}`, () => {
-    test('offers a review of uncommitted changes, and hides on request', async ($, on) => {
+    test('offers a review of uncommitted changes beside the other plugins’ bands, and hides on request', async ($, on) => {
       fakeSession(on, '/repo')
       drawEngineBand(on)
       fakeProcesses(on, { repository: dirtyRepository([' M src/app.ts', '?? notes.md']) })
@@ -91,6 +91,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
       expect(await ui.find({ type: 'Text', text: '2 uncommitted files' })).toBeDefined()
       expect((await ui.find({ key: 'review' }))?.props.label).toBe('Review changes')
+      expect(await ui.find({ type: 'Text', text: 'engine band' })).toBeDefined()
 
       await ui.press({ key: 'hide' })
       expect(await ui.find({ key: 'review' })).toBeUndefined()

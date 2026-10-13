@@ -61,8 +61,8 @@ export function currentRunId(): string | null {
   return runIdStartedByThisModuleLife
 }
 
-export function isAnalyzerNotification(text: string): boolean {
-  return [...analyzerAgentIds].some(agentId => text.includes(agentId))
+export function isFromAnalyzer(text: string): boolean {
+  return [...analyzerAgentIds].some(agentId => text.includes(`from="${agentId}"`))
 }
 
 function messageOf(error: unknown): string {

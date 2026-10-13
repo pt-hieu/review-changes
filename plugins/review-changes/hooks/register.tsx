@@ -5,7 +5,7 @@ import { ANALYZER_AGENT, ANALYZER_FINISHED_NOTIFICATION } from './analysis.ts'
 import {
   currentRunId,
   deliver,
-  isAnalyzerNotification,
+  isFromAnalyzer,
   openInBrowser,
   refreshCandidate,
   resetRun,
@@ -87,9 +87,11 @@ export const register: Register = on => {
 
   on('agent.offer', { agent: 'review-changes:analyzer' }, () => ({ isOffered: false }))
 
-  on('prompt.submit', ($, e, next) => {
-    if (e.origin.kind === 'task-notification' && isAnalyzerNotification(e.text)) {
-      return next({ ...e, text: ANALYZER_FINISHED_NOTIFICATION })
+  on('session.append', ($, e, next) => {
+    const isMainConversation = e.agentId === undefined
+    const text = e.message.content.map(block => (block.type === 'text' ? block.text : '')).join('')
+    if (isMainConversation && e.origin.kind === 'peer' && isFromAnalyzer(text)) {
+      return next({ ...e, message: { ...e.message, content: [{ type: 'text', text: ANALYZER_FINISHED_NOTIFICATION }] } })
     }
 
     return next(e)

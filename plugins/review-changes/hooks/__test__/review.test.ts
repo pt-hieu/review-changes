@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RunCommand } from '../git.ts'
-import { currentRunId, deliver, isAnalyzerNotification, openInBrowser, refreshCandidate, resetRun, startReview, startReviewWithToast } from '../review.ts'
+import { currentRunId, deliver, isFromAnalyzer, openInBrowser, refreshCandidate, resetRun, startReview, startReviewWithToast } from '../review.ts'
 import type { AnalyzerAnswer } from '../review.ts'
 import { createRepository } from './fakeGit.ts'
 import { fakeEngine, REPOSITORY_ROOT, worktreeEnvironment } from './fakeEngine.ts'
@@ -187,18 +187,27 @@ describe('deliver', () => {
   })
 })
 
-describe('isAnalyzerNotification', () => {
-  test('recognizes the notification of an analyzer a review started', async () => {
+describe('isFromAnalyzer', () => {
+  test('recognizes the hand-back of an analyzer a review started', async () => {
     const { engine } = fakeEngine({ agentId: 'agent-notified', model: 'claude-sonnet' })
     const started = await startReview(engine, '--worktree')
     deliver('agent-notified', ABORTED_ANSWER)
     await started.completion
 
-    expect(isAnalyzerNotification('<task-notification><task-id>agent-notified</task-id><status>completed</status></task-notification>')).toBe(true)
+    expect(isFromAnalyzer('<agent-message from="agent-notified">\n[Subagent hand-back] {"groups": []}\n</agent-message>')).toBe(true)
   })
 
-  test('leaves the notification of any other agent alone', () => {
-    expect(isAnalyzerNotification('<task-notification><task-id>agent-elsewhere</task-id><status>completed</status></task-notification>')).toBe(false)
+  test('leaves a message from any other agent alone', () => {
+    expect(isFromAnalyzer('<agent-message from="agent-elsewhere">\n[Subagent hand-back] done\n</agent-message>')).toBe(false)
+  })
+
+  test('leaves a message that only mentions an analyzer in its body alone', async () => {
+    const { engine } = fakeEngine({ agentId: 'agent-mentioned', model: 'claude-sonnet' })
+    const started = await startReview(engine, '--worktree')
+    deliver('agent-mentioned', ABORTED_ANSWER)
+    await started.completion
+
+    expect(isFromAnalyzer('<agent-message from="agent-elsewhere">\n[Subagent hand-back] The analyzer agent-mentioned finished.\n</agent-message>')).toBe(false)
   })
 })
 

@@ -25,6 +25,7 @@ const REVIEW_BUTTON_COLUMNS = 20
 const OPEN_LAST_BUTTON_COLUMNS = 22
 const HIDE_BUTTON_COLUMNS = 8
 const BAND_GAP_COLUMNS = 1
+const BAND_BULLET = '◆ '
 
 function pluginDirectoryOf(pluginRoot: string): string {
   return pluginRoot.replace(/\/\.claude-plugin\/?$/, '')
@@ -131,7 +132,7 @@ export const register: Register = on => {
       ...(!isRunning && offer ? [REVIEW_BUTTON_COLUMNS] : []),
     ]
     const buttonColumns = buttonWidths.reduce((total, width) => total + width + BAND_GAP_COLUMNS, 0)
-    const textColumns = Math.max(0, e.props.bodyColumns - buttonColumns)
+    const textColumns = Math.max(0, e.props.bodyColumns - buttonColumns - BAND_BULLET.length)
 
     return (
       <Box flexDirection="column">
@@ -139,11 +140,11 @@ export const register: Register = on => {
         <Box flexDirection="row" marginTop={1} columnGap={BAND_GAP_COLUMNS}>
           {isRunning ? (
             <Text key="progress" dimColor wrap="truncate">
-              {truncate(`Reviewing ${runningReview.label}: ${runningReview.phase}…`, textColumns)}
+              {BAND_BULLET + truncate(`Reviewing ${runningReview.label}: ${runningReview.phase}…`, textColumns)}
             </Text>
           ) : offer ? (
             <Text key="summary" dimColor wrap="truncate">
-              {truncate(offer.summary, textColumns)}
+              {BAND_BULLET + truncate(offer.summary, textColumns)}
             </Text>
           ) : null}
           {!isRunning && offer ? (

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { RunCommand } from '../git.ts'
-import { currentRunId, deliver, openInBrowser, refreshCandidate, resetRun, startReview, startReviewWithToast } from '../review.ts'
+import { currentRunId, deliver, isAnalyzerNotification, openInBrowser, refreshCandidate, resetRun, startReview, startReviewWithToast } from '../review.ts'
 import type { AnalyzerAnswer } from '../review.ts'
 import { createRepository } from './fakeGit.ts'
 import { fakeEngine, REPOSITORY_ROOT, worktreeEnvironment } from './fakeEngine.ts'
@@ -184,6 +184,21 @@ describe('deliver', () => {
 
     expect(world.notices[0]?.text).toContain('Analysis failed')
     expect(world.notices[0]?.text).not.toContain('Stale')
+  })
+})
+
+describe('isAnalyzerNotification', () => {
+  test('recognizes the notification of an analyzer a review started', async () => {
+    const { engine } = fakeEngine({ agentId: 'agent-notified', model: 'claude-sonnet' })
+    const started = await startReview(engine, '--worktree')
+    deliver('agent-notified', ABORTED_ANSWER)
+    await started.completion
+
+    expect(isAnalyzerNotification('<task-notification><task-id>agent-notified</task-id><status>completed</status></task-notification>')).toBe(true)
+  })
+
+  test('leaves the notification of any other agent alone', () => {
+    expect(isAnalyzerNotification('<task-notification><task-id>agent-elsewhere</task-id><status>completed</status></task-notification>')).toBe(false)
   })
 })
 

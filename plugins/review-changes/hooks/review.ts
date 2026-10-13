@@ -55,9 +55,14 @@ const MAXIMUM_EARLY_ANSWERS = 20
 let runIdStartedByThisModuleLife: string | null = null
 const answerWaiters = new Map<string, (input: AnalyzerAnswer) => void>()
 const earlyAnswers = new Map<string, AnalyzerAnswer>()
+const analyzerAgentIds = new Set<string>()
 
 export function currentRunId(): string | null {
   return runIdStartedByThisModuleLife
+}
+
+export function isAnalyzerNotification(text: string): boolean {
+  return [...analyzerAgentIds].some(agentId => text.includes(agentId))
 }
 
 function messageOf(error: unknown): string {
@@ -193,6 +198,7 @@ async function collectAndAnalyze(
     if (spawned.deny) spawnFailure = spawned.deny
 
     if (spawned.agentId) {
+      analyzerAgentIds.add(spawned.agentId)
       model = spawned.model
       answer = registerAnswerWaiterSynchronously(engine, spawned.agentId, ANSWER_TIMEOUT_MILLISECONDS)
     }

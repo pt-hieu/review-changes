@@ -15,6 +15,9 @@ import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind, Rev
 
 export const ANALYZER_AGENT = 'review-changes:analyzer'
 
+export const ANALYZER_FINISHED_NOTIFICATION =
+  'The user ran the review-changes plugin, which started this subagent to lay out a code change for them. The subagent has finished, and the plugin turns its answer into a review page where the user reviews the change themselves. Nothing here needs action from you: acknowledge it in one short sentence.'
+
 export const INLINE_DIFF_CHARACTER_LIMIT = 200_000
 
 export const USER_REQUESTS_TOTAL_CHARACTER_LIMIT = 12_000

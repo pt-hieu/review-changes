@@ -1,10 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { ANALYZER_AGENT } from './analysis.ts'
+import { ANALYZER_AGENT, ANALYZER_FINISHED_NOTIFICATION } from './analysis.ts'
 import {
   currentRunId,
   deliver,
+  isAnalyzerNotification,
   openInBrowser,
   refreshCandidate,
   resetRun,
@@ -85,6 +86,14 @@ export const register: Register = on => {
   })
 
   on('agent.offer', { agent: 'review-changes:analyzer' }, () => ({ isOffered: false }))
+
+  on('prompt.submit', ($, e, next) => {
+    if (e.origin.kind === 'task-notification' && isAnalyzerNotification(e.text)) {
+      return next({ ...e, text: ANALYZER_FINISHED_NOTIFICATION })
+    }
+
+    return next(e)
+  })
 
   on('turn.complete', ($, e, next) => {
     if (e.agentId) deliver(e.agentId, { answer: e.answer, reason: e.reason })

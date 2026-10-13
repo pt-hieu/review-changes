@@ -17,3 +17,9 @@ export function totalLineCounts(files: readonly Pick<ReviewFile, 'additions' | '
     deletions: files.reduce((sum, file) => sum + file.deletions, 0),
   }
 }
+
+export function lineCountsLabel(files: readonly Pick<ReviewFile, 'additions' | 'deletions'>[]): string {
+  const { additions, deletions } = totalLineCounts(files)
+
+  return `+${additions}/−${deletions}`
+}

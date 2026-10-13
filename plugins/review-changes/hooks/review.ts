@@ -9,7 +9,7 @@ import {
   selectUserRequests,
 } from './analysis.ts'
 import type { SessionMessageText } from './analysis.ts'
-import { countOf, totalLineCounts } from './counts.ts'
+import { countOf, lineCountsLabel } from './counts.ts'
 import { ReviewSourceError, findReviewCandidate, resolveReviewSource } from './git.ts'
 import type { ReviewSource, RunCommand } from './git.ts'
 import { assembleReviewHtml } from './html.ts'
@@ -217,9 +217,8 @@ async function collectAndAnalyze(
     answer: answer ?? Promise.reject(new Error(spawnFailure)),
   })
 
-  const { additions, deletions } = totalLineCounts(files)
   return {
-    text: `Reviewing ${label} (${countOf(files.length, 'file')}, +${additions}/−${deletions}). The page opens when the analysis is done.`,
+    text: `Reviewing ${label} (${countOf(files.length, 'file')}, ${lineCountsLabel(files)}). The page opens when the analysis is done.`,
     completion,
   }
 }

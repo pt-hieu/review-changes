@@ -2,7 +2,7 @@ import type { PluginState } from 'claude-code'
 
 import {
   buildAnalyzerPrompt,
-  buildModelNoteWithUntrustedAnalysis,
+  buildModelNote,
   buildSessionNote,
   fallbackAnalysis,
   parseAnalyzerAnswer,
@@ -302,7 +302,7 @@ async function finishReview(
 
     await engine.writeLast({ label, htmlPath })
     await engine.appendNotice(buildSessionNote(payload, htmlPath), NoticeType.System)
-    await engine.appendNotice(buildModelNoteWithUntrustedAnalysis(payload, htmlPath), NoticeType.User)
+    await engine.appendNotice(buildModelNote(payload, htmlPath), NoticeType.User)
     engine.toast(`Review ready: ${label}`, 6000)
   } catch (error) {
     const text = `review-changes failed: ${messageOf(error)}`

@@ -2,7 +2,7 @@
 
 A Claude Code mod (a plugin of function hooks, Claude Code 2.1.292) and the local marketplace that lists it. `/review-changes [target]`, or the band's **Review changes** button, collects one diff from the git repo the session runs in. A read-only subagent groups the diff the way pulls.review does, and the mod writes one self-contained HTML file that renders the diff with `@pierre/diffs` and opens it in the browser. The goal and the out-of-scope list are in `CLAUDE.md`. Everything here serves the human's own review. The mod never edits, posts or judges.
 
-Ground truth for the plugin API is the engine's declaration file. When the engine loads the plugin it lays that file at `plugins/review-changes/.claude-plugin/types/claude-code/index.d.ts` (gitignored; a copy is already there for type checking). Grep it; it is about 21k lines, so don't read it whole.
+Ground truth for the plugin API is the engine's declaration file. When the engine loads the plugin it lays that file at `plugins/review-changes/.claude-plugin/types/claude-code/index.d.ts` (committed, so type checking works on a fresh clone; the engine rewrites it on load). Grep it; it is about 21k lines, so don't read it whole.
 
 ## 1. Repo layout
 
@@ -23,7 +23,7 @@ review-changes/                         repo root = the marketplace
     dev/                                optional: a fixture payload + dev page for agent-browser checks
   plugins/review-changes/               the plugin (what --plugin-dir and the marketplace point at)
     .claude-plugin/plugin.json
-    .claude-plugin/types/               engine-written, gitignored
+    .claude-plugin/types/               engine-written, committed
     agents/analyzer.md                  agent type `review-changes:analyzer`
     assets/viewer.js, assets/viewer.css committed build output, inlined into each review
     hooks/hooks.json                    { "modules": ["./register.tsx"] }

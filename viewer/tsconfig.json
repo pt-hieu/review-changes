@@ -6,6 +6,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": false,
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,

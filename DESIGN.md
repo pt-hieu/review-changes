@@ -360,11 +360,11 @@ Every expected value is written out by hand. The fakes are a `RunCommand` keyed 
 ```
 bun install
 bun run build:viewer            # writes plugins/review-changes/assets/viewer.{js,css}; prints sizes
-bun run typecheck               # tsc -p tsconfig.plugin.json && tsc -p viewer/tsconfig.json
+bun run typecheck               # bun check --no-script -p tsconfig.plugin.json && bun check --no-script -p viewer/tsconfig.json
 bun run test                    # claude plugin test plugins/review-changes
 bun run validate                # claude plugin validate . && claude plugin validate plugins/review-changes
 ```
-`tsconfig.plugin.json` (root, outside the plugin) has the header's options + `allowImportingTsExtensions` and includes the plugin's `.claude-plugin/types`, `hooks`, `types` and `tests`. `viewer/tsconfig.json`: `lib: ["es2023", "dom", "dom.iterable"]`, `moduleResolution: "bundler"`, `strict`, `noUncheckedIndexedAccess`, `allowImportingTsExtensions`, `noEmit`, `types: ["bun"]` for build.ts. Include `viewer/**/*.ts`, `plugins/review-changes/hooks/payload.ts` and `plugins/review-changes/hooks/types.ts`.
+`tsconfig.plugin.json` (root, outside the plugin) has the header's options + `allowImportingTsExtensions` and includes the plugin's `.claude-plugin/types`, `hooks`, `types` and `tests`. `viewer/tsconfig.json`: `lib: ["es2023", "dom", "dom.iterable"]`, `moduleResolution: "bundler"`, `strict`, `noUncheckedIndexedAccess`, `noUncheckedSideEffectImports: false`, `allowImportingTsExtensions`, `noEmit`, `types: ["bun"]` for build.ts. Include `viewer/**/*.ts`, `plugins/review-changes/hooks/payload.ts` and `plugins/review-changes/hooks/types.ts`.
 
 E2E (manual): from a repo with an open pull request, `claude --plugin-dir <path to this repo>/plugins/review-changes`, then `/review-changes #<number>`. Expect the page in `.git/review-changes/pr-<number>.html`, a toast and a note.
 

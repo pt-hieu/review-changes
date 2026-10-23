@@ -6,7 +6,7 @@
     "build:viewer": "bun run viewer/build.ts",
     "test": "claude plugin test plugins/review-changes && bun run test:viewer",
     "test:viewer": "cd viewer && bun test",
-    "typecheck": "tsc -p tsconfig.plugin.json && tsc -p viewer/tsconfig.json",
+    "typecheck": "bun check --no-script -p tsconfig.plugin.json && bun check --no-script -p viewer/tsconfig.json",
     "validate": "claude plugin validate . && claude plugin validate plugins/review-changes"
   },
   "devDependencies": {

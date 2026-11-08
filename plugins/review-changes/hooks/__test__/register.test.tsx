@@ -1,294 +1,147 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { deliver, startReview } from '../review.ts'
-import type { AnalyzerAnswer } from '../review.ts'
-import { NoticeType, ReviewCategory, ReviewLineSide } from '../types.ts'
-import { fakeEngine, REPOSITORY_ROOT, WORKTREE_PATCH } from './fakeEngine.ts'
-import { createFakeRunCommand, createRepository } from './fakeGit.ts'
-import type { FakeEnvironment } from './fakeGit.ts'
+import { forgetBunPath } from '../bun.ts'
+import { BUN_PATH, COLLECTED, EXPECTED_SPLIT } from './fakeWorld.ts'
 
 const BAND_PROPS = {
   hasSurvey: false,
   isWorking: false,
   maxRows: 10,
-  bodyColumns: 80,
+  bodyColumns: 100,
   scroll: { offset: 0, bodyRows: 10 },
   view: {},
 }
 
 const PRESENTATION = { isFullscreen: false, columns: 80 }
+const REX_ENVIRONMENT: Record<string, string> = { REX_BLOCK: 'block-1', REX_SESSION: 'session-1', REX_BIN_DIR: '/rex/bin', HOME: '/home/ada' }
 
-function fakeProcesses(on: On, environment: FakeEnvironment) {
-  const runCommand = createFakeRunCommand(environment)
+type Reply = { exitCode: number; stdout?: string }
 
-  on('process.run', async ($, e) => {
-    const result = await runCommand(e.argv)
+const APP = 'APP'
+const SPLIT = EXPECTED_SPLIT.map(argument => (argument.endsWith('review-changes.js') ? APP : argument)).join(' ')
 
-    return { value: { ...result, isStderrTruncated: false } }
-  })
+function normalized(argv: readonly string[]): string {
+  const appArgument = argv.find(argument => argument.endsWith('/assets/review-changes.js'))
+  const pluginDirectory = appArgument?.slice(0, -'/assets/review-changes.js'.length)
+
+  return argv.map(argument => (argument === appArgument ? APP : argument === pluginDirectory ? '/plugin' : argument)).join(' ')
 }
 
-function dirtyRepository(statusEntries: string[]) {
-  return createRepository({ root: REPOSITORY_ROOT, branches: {}, statusEntries })
-}
-
-function fakeSession(on: On, workingDirectory: string) {
+function fakeSession(on: On) {
   mock.clock(on)
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.cwd', () => ({ value: workingDirectory }))
+  on('session.cwd', () => ({ value: '/repo' }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
+}
+
+function fakeEnvironment(on: On, values: Record<string, string>) {
+  on('env.get', (_$, e) => ({ value: values[e.name] }))
+}
+
+function fakeProcesses(on: On, replies: Record<string, Reply>, commands: string[][] = []) {
+  forgetBunPath()
+
+  const known: Record<string, Reply> = {
+    'bun --no-env-file -e console.log(process.execPath)': { exitCode: 0, stdout: `${BUN_PATH}\n` },
+    [`${BUN_PATH} --no-env-file ${APP} candidate --cwd /repo`]: { exitCode: 0, stdout: '{"summary":"2 uncommitted files"}\n' },
+    ...replies,
+  }
+
+  on('process.run', (_$, e) => {
+    commands.push([...e.argv])
+
+    const reply = known[normalized(e.argv)]
+
+    if (reply === undefined) return { value: { exitCode: 127, stdout: '', stderr: 'unknown', isStdoutTruncated: false, isStderrTruncated: false } }
+
+    return { value: { exitCode: reply.exitCode, stdout: reply.stdout ?? '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
 }
 
 function drawEngineBand(on: On) {
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
+
     return <Text>engine band</Text>
   })
 }
 
 describe('/review-changes', () => {
-  test('answers a bad argument with the usage', async ($, on) => {
-    fakeSession(on, '/repo')
-    fakeProcesses(on, { repository: createRepository({ root: null }) })
+  test('opens the split pane through rex and answers with counts only', async ($, on) => {
+    const commands: string[][] = []
+    fakeSession(on)
+    fakeEnvironment(on, REX_ENVIRONMENT)
+    fakeProcesses(
+      on,
+      {
+        [`test -f ${APP}`]: { exitCode: 0 },
+        [`${BUN_PATH} --no-env-file ${APP} collect --cwd /repo`]: { exitCode: 0, stdout: `${JSON.stringify({ ...COLLECTED, isAnalysisCurrent: true })}\n` },
+        [SPLIT]: { exitCode: 0, stdout: '{"block_ids":["block-2"]}\n' },
+      },
+      commands,
+    )
     await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
 
-    const { text } = await $.command.run({
-      command: 'review-changes',
-      args: '-x',
-      origin: { kind: 'composer' } as never,
-      presentation: PRESENTATION,
-    })
+    const { text } = await $.command.run({ command: 'review-changes', args: '#12', origin: { kind: 'composer' } as never, presentation: PRESENTATION })
 
-    expect(text).toContain('Unknown option "-x".')
-    expect(text).toContain('Usage: /review-changes [target]')
+    expect(text).toContain('Opened the review pane for pull request #12: 4200 files')
+    expect(text).not.toContain('evil-branch')
   })
 
-  test('says so when the session is not inside a git repository', async ($, on) => {
-    fakeSession(on, '/not-a-repo')
-    fakeProcesses(on, { repository: createRepository({ root: null }) })
-    await $.session.start({ cwd: '/not-a-repo', surface: null, isInteractive: true })
+  test('answers a missing bun without collecting anything', async ($, on) => {
+    fakeSession(on)
+    fakeEnvironment(on, REX_ENVIRONMENT)
+    fakeProcesses(on, { 'bun --no-env-file -e console.log(process.execPath)': { exitCode: 127 } })
+    await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
 
-    const { text } = await $.command.run({
-      command: 'review-changes',
-      args: '',
-      origin: { kind: 'composer' } as never,
-      presentation: PRESENTATION,
-    })
+    const { text } = await $.command.run({ command: 'review-changes', args: '', origin: { kind: 'composer' } as never, presentation: PRESENTATION })
 
-    expect(text).toBe('Not inside a git repository: /not-a-repo')
+    expect(text).toContain('review-changes needs bun')
   })
 })
 
 for (const surface of ['terminal', 'desktop'] as const) {
   describe(`the band above the prompt on ${surface}`, () => {
-    test('offers a review of uncommitted changes beside the other plugins’ bands, and hides on request', async ($, on) => {
-      fakeSession(on, '/repo')
+    test('offers a pane review beside the other plugins’ bands in Rex, and hides on request', async ($, on) => {
+      fakeSession(on)
       drawEngineBand(on)
-      fakeProcesses(on, { repository: dirtyRepository([' M src/app.ts', '?? notes.md']) })
+      fakeEnvironment(on, REX_ENVIRONMENT)
+      fakeProcesses(on, {})
       await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
       const ui = await $.ui.mount({ plugin: 'review-changes', surface, component: 'AbovePrompt', props: BAND_PROPS })
 
       expect(await ui.find({ type: 'Text', text: '2 uncommitted files' })).toBeDefined()
-      expect((await ui.find({ key: 'review' }))?.props.label).toBe('Review changes')
+      expect((await ui.find({ key: 'review' }))?.props.label).toBe('Review in pane')
       expect(await ui.find({ type: 'Text', text: 'engine band' })).toBeDefined()
 
       await ui.press({ key: 'hide' })
       expect(await ui.find({ key: 'review' })).toBeUndefined()
-      expect(await ui.find({ key: 'hide' })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: 'engine band' })).toBeDefined()
     })
 
-    test('leaves the band to the engine when there is nothing to review', async ($, on) => {
-      fakeSession(on, '/repo')
+    test('labels the button plainly outside Rex and offers no pane to open', async ($, on) => {
+      fakeSession(on)
       drawEngineBand(on)
-      fakeProcesses(on, { repository: dirtyRepository([]) })
+      fakeEnvironment(on, { HOME: '/home/ada' })
+      fakeProcesses(on, {})
+      await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
+      const ui = await $.ui.mount({ plugin: 'review-changes', surface, component: 'AbovePrompt', props: BAND_PROPS })
+
+      expect((await ui.find({ key: 'review' }))?.props.label).toBe('Review')
+      expect(await ui.find({ key: 'open-pane' })).toBeUndefined()
+    })
+
+    test('leaves the band to the engine when there is nothing to review', async ($, on) => {
+      fakeSession(on)
+      drawEngineBand(on)
+      fakeEnvironment(on, REX_ENVIRONMENT)
+      fakeProcesses(on, { [`${BUN_PATH} --no-env-file ${APP} candidate --cwd /repo`]: { exitCode: 0, stdout: 'null\n' } })
       await $.session.start({ cwd: '/repo', surface: null, isInteractive: true })
       const ui = await $.ui.mount({ plugin: 'review-changes', surface, component: 'AbovePrompt', props: BAND_PROPS })
 
       expect(await ui.find({ key: 'review' })).toBeUndefined()
-      expect(await ui.find({ key: 'hide' })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: 'engine band' })).toBeDefined()
     })
   })
 }
-
-const HTML_PATH = '/repo/.git/review-changes/worktree.html'
-const payloadElementStart = '<script type="application/json" id="review-payload">'
-
-function pagePayload(html: string | undefined): Record<string, unknown> {
-  const page = html ?? ''
-  const start = page.indexOf(payloadElementStart) + payloadElementStart.length
-  return JSON.parse(page.slice(start, page.indexOf('</script>', start)))
-}
-
-const GROUPED_ANSWER: AnalyzerAnswer = {
-  reason: 'answer',
-  answer: [
-    '```json',
-    JSON.stringify({
-      overallSummary: 'Listens on every interface.',
-      groups: [
-        {
-          key: 'server',
-          label: 'Server',
-          category: ReviewCategory.Core,
-          summary: 'Binds to all interfaces. Containers need it.',
-          filePaths: ['src/app.ts'],
-          lineNotes: [{ path: 'src/app.ts', side: ReviewLineSide.Additions, line: 2, text: 'Now reachable from outside.', critical: true }],
-        },
-      ],
-    }),
-    '```',
-  ].join('\n'),
-}
-
-const FALLBACK_GROUPS = [
-  {
-    key: 'uncategorized',
-    label: 'Uncategorized',
-    category: ReviewCategory.Other,
-    summary: '',
-    filePaths: ['src/app.ts'],
-    fileNotes: [],
-    lineNotes: [],
-  },
-]
-
-describe('a review run', () => {
-  test('writes the page from the analyzer’s answer, opens it and leaves a note', async () => {
-    const { engine, world } = fakeEngine({ agentId: 'agent-grouped', model: 'claude-sonnet' })
-
-    const started = await startReview(engine, '--worktree')
-    expect(started.text).toContain('Reviewing Uncommitted changes on main')
-    expect(started.text).toContain('1 file')
-    expect(world.run?.label).toBe('Uncommitted changes on main')
-
-    deliver('agent-grouped', GROUPED_ANSWER)
-    await started.completion
-
-    expect(world.written.get('/repo/.git/review-changes/worktree.patch')).toBe(WORKTREE_PATCH)
-    expect(pagePayload(world.written.get(HTML_PATH))).toMatchObject({
-      generatedAt: '2026-10-07T12:00:00.000Z',
-      title: 'Uncommitted changes on main',
-      repository: { root: '/repo', name: 'acme/shop' },
-      analysisModel: 'claude-sonnet',
-      analysis: {
-        overallSummary: 'Listens on every interface.',
-        groups: [
-          {
-            key: 'server',
-            label: 'Server',
-            category: ReviewCategory.Core,
-            summary: 'Binds to all interfaces. Containers need it.',
-            filePaths: ['src/app.ts'],
-            fileNotes: [],
-            lineNotes: [{ path: 'src/app.ts', side: ReviewLineSide.Additions, line: 2, text: 'Now reachable from outside.', critical: true }],
-          },
-        ],
-      },
-    })
-    const [sessionNotice, modelNotice] = world.notices
-    expect(world.notices.map(notice => notice.type)).toStrictEqual([NoticeType.System, NoticeType.User])
-    expect(sessionNotice?.text).toContain('Uncommitted changes on main')
-    expect(sessionNotice?.text).toContain('Listens on every interface.')
-    expect(sessionNotice?.text).toContain('- src/app.ts:2 — Now reachable from outside.')
-    expect(sessionNotice?.text).toContain(`Page: ${HTML_PATH}`)
-    expect(modelNotice?.text).toContain(HTML_PATH)
-    expect(modelNotice?.text).not.toContain('Listens on every interface.')
-    expect(modelNotice?.text).not.toContain('Now reachable from outside.')
-    expect(world.toasts).toStrictEqual(['Review ready: Uncommitted changes on main'])
-    expect(world.openedInBrowser).toStrictEqual([HTML_PATH])
-    expect(world.last).toStrictEqual({ label: 'Uncommitted changes on main', htmlPath: HTML_PATH })
-    expect(world.run).toBe(null)
-    expect(world.candidate).toStrictEqual({ summary: '1 uncommitted file' })
-  })
-
-  test('writes the page without opening a browser when the environment asks for none', async () => {
-    const { engine, world } = fakeEngine({ deny: 'denied' }, { shouldOpenBrowser: false })
-
-    await (await startReview(engine, '--worktree')).completion
-
-    expect(world.written.has(HTML_PATH)).toBe(true)
-    expect(world.openedInBrowser).toStrictEqual([])
-    expect(world.notices[0]?.text).toContain(`Page: ${HTML_PATH}`)
-  })
-
-  test('refuses a second run while one is in flight', async () => {
-    const { engine } = fakeEngine({ agentId: 'agent-busy', model: 'claude-sonnet' })
-    const started = await startReview(engine, '')
-
-    const refusal = (await startReview(engine, '--worktree')).text
-    expect(refusal).toContain('already running')
-    expect(refusal).toContain('Uncommitted changes on main')
-
-    deliver('agent-busy', GROUPED_ANSWER)
-    await started.completion
-  })
-
-  test('takes an answer that arrives before the run waits for it', async () => {
-    const { engine, world } = fakeEngine({ agentId: 'agent-early', model: 'claude-sonnet' })
-    const spawnAnalyzer = engine.spawnAnalyzer
-    engine.spawnAnalyzer = async request => {
-      const spawned = await spawnAnalyzer(request)
-      deliver('agent-early', GROUPED_ANSWER)
-      return spawned
-    }
-
-    await (await startReview(engine, '--worktree')).completion
-
-    expect(pagePayload(world.written.get(HTML_PATH))).toMatchObject({
-      analysis: { overallSummary: 'Listens on every interface.' },
-    })
-  })
-
-  test('still writes the page, grouped as a fallback, when the analyzer is aborted', async () => {
-    const { engine, world } = fakeEngine({ agentId: 'agent-aborted', model: 'claude-sonnet' })
-    const started = await startReview(engine, '--worktree')
-
-    deliver('agent-aborted', { answer: '', reason: 'aborted' })
-    await started.completion
-
-    expect(pagePayload(world.written.get(HTML_PATH))).toMatchObject({
-      analysisError: 'the analyzer ended (aborted)',
-      analysis: { groups: FALLBACK_GROUPS },
-    })
-    expect(world.notices[0]?.text).toContain('Analysis failed: the analyzer ended (aborted)')
-    expect(world.toasts).toStrictEqual(['Review ready: Uncommitted changes on main'])
-  })
-
-  test('gives up waiting after the timeout and writes the fallback page', async () => {
-    const { engine, world } = fakeEngine({ agentId: 'agent-silent', model: 'claude-sonnet' })
-    const started = await startReview(engine, '--worktree')
-
-    for (const fire of world.pendingTimers.splice(0)) fire()
-    await started.completion
-
-    expect(pagePayload(world.written.get(HTML_PATH))).toMatchObject({
-      analysisError: 'the analyzer gave no answer within 15 minutes',
-      analysis: { groups: FALLBACK_GROUPS },
-    })
-  })
-
-  test('writes the fallback page when the spawn is denied', async () => {
-    const { engine, world } = fakeEngine({ deny: 'subagents are off in this session' })
-
-    await (await startReview(engine, '--worktree')).completion
-
-    expect(pagePayload(world.written.get(HTML_PATH))).toMatchObject({
-      analysisError: 'subagents are off in this session',
-      analysis: { groups: FALLBACK_GROUPS },
-    })
-  })
-
-  test('reports a missing viewer bundle as a failure, writing no page', async () => {
-    const { engine, world } = fakeEngine({ deny: 'denied' }, { assets: {} })
-
-    await (await startReview(engine, '--worktree')).completion
-
-    expect(world.written.has(HTML_PATH)).toBe(false)
-    expect(world.toasts[0]).toContain('review-changes failed: cannot read the viewer bundle at /plugin/assets/viewer.js')
-    expect(world.notices).toStrictEqual([{ type: NoticeType.System, text: world.toasts[0] }])
-    expect(world.run).toBe(null)
-  })
-})

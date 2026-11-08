@@ -3,16 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:viewer": "bun run viewer/build.ts",
-    "test": "claude plugin test plugins/review-changes && bun run test:viewer",
-    "test:viewer": "cd viewer && bun test",
-    "typecheck": "bun check --no-script -p tsconfig.plugin.json && bun check --no-script -p viewer/tsconfig.json",
-    "validate": "claude plugin validate . && claude plugin validate plugins/review-changes"
+    "build:tui": "bun run tui/build.ts",
+    "test": "claude plugin test plugins/review-changes && bun run test:tui",
+    "test:tui": "cd tui && bun test",
+    "typecheck": "bun check --no-script -p tsconfig.plugin.json && bun check --no-script -p tui/tsconfig.json",
+    "validate": "claude plugin validate . && claude plugin validate plugins/review-changes",
+    "bench:tui": "bun run build:tui && bun tui/dev/ui-benchmark.ts plugins/review-changes/assets/review-changes.js",
+    "bench:tui:data": "bun run tui/dev/benchmark.ts"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.14.5",
-    "@pierre/diffs": "1.5.2",
+    "@shikijs/langs": "4.5.0",
     "@types/bun": "latest",
+    "shiki": "4.5.0",
     "typescript": "^5.9.0"
   }
 }

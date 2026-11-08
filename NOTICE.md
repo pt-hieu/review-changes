@@ -1,7 +1,7 @@
 review-changes adapts code from pulls.review (https://github.com/antfu/pulls.review):
 
-- plugins/review-changes/hooks/patch.ts: the C-quoted path handling, from packages/core/src/patch-parser.ts
-- plugins/review-changes/hooks/analysis.ts: the analyzer prompt, from packages/core/src/analyze/adapters/llm/prompt.ts
+- tui/src/review/patch.ts: the C-quoted path handling, from packages/core/src/patch-parser.ts
+- plugins/review-changes/agents/analyzer.md and tui/src/review/analysis.ts: the analyzer prompt, from packages/core/src/analyze/adapters/llm/prompt.ts
 
 pulls.review is distributed under this license:
 

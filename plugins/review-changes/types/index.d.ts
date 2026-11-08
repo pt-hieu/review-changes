@@ -2,7 +2,7 @@ export type ReviewChangesCandidate = {
   summary: string
 }
 
-export type ReviewChangesPhase = 'collecting' | 'analyzing' | 'writing'
+export type ReviewChangesPhase = 'collecting' | 'analyzing'
 
 export type ReviewChangesRun = {
   runId: string
@@ -10,9 +10,11 @@ export type ReviewChangesRun = {
   phase: ReviewChangesPhase
 }
 
-export type ReviewChangesLast = {
+export type ReviewChangesPane = {
+  reviewDirectory: string
+  repositoryRoot: string
   label: string
-  htmlPath: string
+  blockId: string | null
 }
 
 declare module 'claude-code' {
@@ -20,7 +22,7 @@ declare module 'claude-code' {
     'review-changes': {
       candidate: ReviewChangesCandidate | null
       run: ReviewChangesRun | null
-      last: ReviewChangesLast | null
+      pane: ReviewChangesPane | null
       isHidden: boolean
     }
   }

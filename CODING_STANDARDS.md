@@ -22,13 +22,13 @@ Boolean variants are not string sets and stay booleans. A type alias that only r
 
 ## Tests
 
-A test file sits in a `__test__` folder beside the file it tests and is named after it: `plugins/review-changes/hooks/git.ts` is tested by `plugins/review-changes/hooks/__test__/git.test.ts`.
+A test file sits in a `__test__` folder beside the file it tests and is named after it: `tui/src/review/git.ts` is tested by `tui/src/review/__test__/git.test.ts`.
 
 A test verifies the behavior of its target, never how the target achieves it. A test that restates the implementation is tautological: it can only pass. A test that fails on a behavior-preserving refactor is a change detector. Both are worse than no test.
 
 - Assert on what a caller can observe: the value returned for the inputs a caller passes, or the state change the caller relies on. Asserting that an internal function was called pins the implementation.
 - Do not pin values no caller can observe, such as the shape of internal state or the format of an internal lookup key. Assert the property the caller relies on instead.
-- Every utility function with behavior of its own is tested, whether it lives in the plugin's `hooks/` or in the viewer's `viewer/src/`.
+- Every utility function with behavior of its own is tested, whether it lives in the plugin's `hooks/` or in the app's `tui/src/`.
 - Do not test a declarative artifact against itself. A reader sees exactly what it accepts, so a test that restates its clauses documents nothing a reader lacks and catches no defect, because there is no logic to get wrong. Test the code that consumes it, where the behavior is emergent.
 - Write the expected value out by hand. An expectation computed with the code under test copies its bug and still passes.
 - Run the real collaborators. Mock only what cannot run for real: network, clock, randomness.

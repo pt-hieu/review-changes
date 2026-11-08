@@ -1,0 +1,27 @@
+type LanguageModule = Promise<{ default: unknown }>
+
+export const LANGUAGE_LOADERS: Record<string, () => LanguageModule> = {
+  typescript: () => import('@shikijs/langs/typescript'),
+  tsx: () => import('@shikijs/langs/tsx'),
+  javascript: () => import('@shikijs/langs/javascript'),
+  jsx: () => import('@shikijs/langs/jsx'),
+  json: () => import('@shikijs/langs/json'),
+  jsonc: () => import('@shikijs/langs/jsonc'),
+  css: () => import('@shikijs/langs/css'),
+  scss: () => import('@shikijs/langs/scss'),
+  html: () => import('@shikijs/langs/html'),
+  markdown: () => import('@shikijs/langs/markdown'),
+  yaml: () => import('@shikijs/langs/yaml'),
+  shellscript: () => import('@shikijs/langs/shellscript'),
+  python: () => import('@shikijs/langs/python'),
+  go: () => import('@shikijs/langs/go'),
+  rust: () => import('@shikijs/langs/rust'),
+  sql: () => import('@shikijs/langs/sql'),
+  toml: () => import('@shikijs/langs/toml'),
+  docker: () => import('@shikijs/langs/docker'),
+  ini: () => import('@shikijs/langs/ini'),
+  xml: () => import('@shikijs/langs/xml'),
+  java: () => import('@shikijs/langs/java'),
+  kotlin: () => import('@shikijs/langs/kotlin'),
+  graphql: () => import('@shikijs/langs/graphql'),
+}

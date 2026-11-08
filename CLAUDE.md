@@ -25,4 +25,4 @@ Every coding rule is in `CODING_STANDARDS.md`.
 2. `.claude-plugin/marketplace.json` — the matching per-plugin `version` entry.
 3. `.claude-plugin/marketplace.json` — the top-level `metadata.version`.
 
-**Viewer bundle** — after any change under `viewer/`, run `bun run build:viewer` and commit the rebuilt `plugins/review-changes/assets/`.
+**App bundle** — after any change under `tui/`, run `bun run build:tui` and commit the rebuilt `plugins/review-changes/assets/`.

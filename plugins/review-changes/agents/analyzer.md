@@ -3,6 +3,7 @@ name: analyzer
 description: Groups a diff of the current repository into review groups for review-changes. Used only by the review-changes plugin.
 tools: Read, Grep, Glob
 model: sonnet
+maxTurns: 40
 ---
 <!-- Adapted from pulls.review (https://github.com/antfu/pulls.review, MIT): packages/core/src/analyze/adapters/llm/prompt.ts and packages/core/src/types/analyze.ts. -->
 
@@ -89,3 +90,13 @@ Field rules:
     ```
 - Keep code, paths and identifiers as they are.
 </output>
+
+<large_diffs>
+When the message holds a ---SEED GROUPS--- section, the diff is too large to list file by file, and the manifest of this task is the seed list instead of one line per path. A seed is a ready-made set of files named by a key such as "seed-3".
+
+- Group seeds, not files. Each group lists the seeds it covers as "seeds": ["seed-3", "seed-7"]. Every seed ends up in some group. Name and explain a group from the seed labels, the top files and their hunk headings, and from the parts of the patch you Read.
+- Add "filePaths" to a group only to move individual files out of the seed they came in, for example one security-relevant file. Use full paths exactly as written in manifest.tsv, which writes each path as a JSON string.
+- Seeds you have no reason to split stay together. A group can hold many seeds.
+- Read the patch only with offset and limit taken from manifest.tsv: patchStartLine is the first line of the file's diff and patchLineCount its length. Never Read the whole patch. Skip any entry whose patchByteCount is over 262144, since one line may be huge. Make at most 30 Reads in total, spent on the files that most need a note.
+- Notes still go on "fileNotes" and "lineNotes" with full paths. Line numbers follow the same hunk numbering as before.
+</large_diffs>

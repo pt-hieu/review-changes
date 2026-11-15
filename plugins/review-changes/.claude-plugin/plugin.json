@@ -1,6 +1,6 @@
 {
   "name": "review-changes",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Reviews the current repo's changes in a terminal app that opens in a Rex split pane, with lazygit-style panels and a diff viewer built for thousands of files. It groups changes by concern and notes what to look at. It never reviews on your behalf and never changes the code.",
   "author": {
     "name": "Brian"

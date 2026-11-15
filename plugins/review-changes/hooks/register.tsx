@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import {
   ANALYZER_AGENT,
-  ANALYZER_FINISHED_NOTIFICATION,
+  analyzerAgentIdsAmong,
   currentRunId,
   deliver,
   isFromAnalyzer,
@@ -12,6 +12,7 @@ import {
   resetRun,
   startReview,
   startReviewWithToast,
+  withoutAnalyzerAnswer,
 } from './run.ts'
 import type { ReviewChangesEngine } from './run.ts'
 import { locateRex } from './rex.ts'
@@ -72,6 +73,17 @@ function reviewEngineOf($: EngineInterface): ReviewChangesEngine {
   }
 }
 
+function withoutAnalyzerAnswerIn<Block extends { type: string; text?: unknown }>(
+  block: Block,
+  agentIds: readonly string[],
+): Block {
+  if (block.type !== 'text' || typeof block.text !== 'string') return block
+
+  const text = withoutAnalyzerAnswer(block.text, agentIds)
+
+  return text === block.text ? block : { ...block, text }
+}
+
 function truncate(text: string, columns: number): string {
   if (columns <= 1) return ''
 
@@ -95,23 +107,25 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('agent.offer', { agent: 'review-changes:analyzer' }, () => ({ isOffered: false }))
+  on('session.receive', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
 
-  on('session.receive', ($, e, next) => {
-    if (e.agentId === undefined && isFromAnalyzer(e.text)) return { consumed: 'review-changes analyzer hand-back' }
+    const agentIds = analyzerAgentIdsAmong(await $.agent.list())
+
+    if (isFromAnalyzer(e.text, agentIds)) return { consumed: 'review-changes analyzer hand-back' }
 
     return next(e)
   })
 
-  on('session.append', ($, e, next) => {
-    const isMainConversation = e.agentId === undefined
-    const text = e.message.content.map(block => (block.type === 'text' ? block.text : '')).join('')
+  on('session.append', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
 
-    if (isMainConversation && e.origin.kind === 'peer' && isFromAnalyzer(text)) {
-      return next({ ...e, message: { ...e.message, content: [{ type: 'text', text: ANALYZER_FINISHED_NOTIFICATION }] } })
-    }
+    const agentIds = analyzerAgentIdsAmong(await $.agent.list())
+    const content = e.message.content.map(block => withoutAnalyzerAnswerIn(block, agentIds))
 
-    return next(e)
+    if (content.every((block, index) => block === e.message.content[index])) return next(e)
+
+    return next({ ...e, message: { ...e.message, content } })
   })
 
   on('turn.complete', ($, e, next) => {

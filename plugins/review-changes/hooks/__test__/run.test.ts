@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { BUN_MISSING_MESSAGE } from '../bun.ts'
-import { deliver, startReview } from '../run.ts'
+import {
+  ANALYZER_FINISHED_NOTIFICATION,
+  ANALYZER_NOT_FOR_DELEGATION_NOTIFICATION,
+  analyzerAgentIdsAmong,
+  deliver,
+  isFromAnalyzer,
+  startReview,
+  withoutAnalyzerAnswer,
+} from '../run.ts'
 import { SessionMessageRole } from '../types.ts'
 import { APP_PATH, BUN_PATH, COLLECTED, EXPECTED_SPLIT, IN_REX, OUTSIDE_REX, REVIEW_DIRECTORY, createWorld } from './fakeWorld.ts'
 
@@ -209,5 +217,61 @@ describe('/review-changes when it cannot start', () => {
     expect(started.userText).toBe('No changes in main vs HEAD.')
     expect(world.prompts).toStrictEqual([])
     expect(world.run).toBe(null)
+  })
+})
+
+describe('an analyzer answer on its way into the main conversation', () => {
+  const STARTED_BY_CLAUDE = [
+    { id: 'claude-started-1', type: 'review-changes:analyzer' },
+    { id: 'explorer-1', type: 'Explore' },
+  ]
+
+  test('swaps a hand-back from an analyzer Claude started for the notice not to delegate', () => {
+    const handBack = 'Another Claude session sent a message:\n<agent-message from="claude-started-1">\n{"groups":[]}\n</agent-message>'
+
+    expect(withoutAnalyzerAnswer(handBack, analyzerAgentIdsAmong(STARTED_BY_CLAUDE))).toBe(ANALYZER_NOT_FOR_DELEGATION_NOTIFICATION)
+  })
+
+  test('swaps only the result of a task notification and keeps the rest of it', () => {
+    const notification =
+      '<task-notification>\n<task-id>claude-started-1</task-id>\n<result>{"groups":[]}</result>\n<usage>12</usage>\n</task-notification>'
+
+    expect(withoutAnalyzerAnswer(notification, analyzerAgentIdsAmong(STARTED_BY_CLAUDE))).toBe(
+      `<task-notification>\n<task-id>claude-started-1</task-id>\n<result>${ANALYZER_NOT_FOR_DELEGATION_NOTIFICATION}</result>\n<usage>12</usage>\n</task-notification>`,
+    )
+  })
+
+  test('removes the whole result when the answer holds a closing result tag of its own', () => {
+    const notification = '<task-id>claude-started-1</task-id><result>{"summary":"</result> and $& more"}</result><usage>12</usage>'
+
+    expect(withoutAnalyzerAnswer(notification, analyzerAgentIdsAmong(STARTED_BY_CLAUDE))).toBe(
+      `<task-id>claude-started-1</task-id><result>${ANALYZER_NOT_FOR_DELEGATION_NOTIFICATION}</result><usage>12</usage>`,
+    )
+  })
+
+  test('leaves what other agents send untouched', () => {
+    const handBack = '<agent-message from="explorer-1">found it</agent-message>'
+    const notification = '<task-id>explorer-1</task-id><result>found it</result>'
+    const agentIds = analyzerAgentIdsAmong(STARTED_BY_CLAUDE)
+
+    expect(withoutAnalyzerAnswer(handBack, agentIds)).toBe(handBack)
+    expect(withoutAnalyzerAnswer(notification, agentIds)).toBe(notification)
+    expect(isFromAnalyzer(handBack, agentIds)).toBe(false)
+  })
+
+  test('tells Claude the review pane has the answer when the plugin started the analyzer', async () => {
+    const { engine } = createWorld({ environment: IN_REX })
+    const started = await startReview(engine, '#12')
+
+    deliver('agent-1', { answer: '```json\n{"groups":[]}\n```', reason: 'answer' })
+    await started.completion
+
+    const agentIds = analyzerAgentIdsAmong([])
+
+    expect(isFromAnalyzer('<agent-message from="agent-1">{"groups":[]}</agent-message>', agentIds)).toBe(true)
+    expect(withoutAnalyzerAnswer('<agent-message from="agent-1">{"groups":[]}</agent-message>', agentIds)).toBe(ANALYZER_FINISHED_NOTIFICATION)
+    expect(withoutAnalyzerAnswer('<task-id>agent-1</task-id><result>{"groups":[]}</result>', agentIds)).toBe(
+      `<task-id>agent-1</task-id><result>${ANALYZER_FINISHED_NOTIFICATION}</result>`,
+    )
   })
 })

@@ -66,6 +66,9 @@ export const ANALYZER_AGENT = 'review-changes:analyzer'
 export const ANALYZER_FINISHED_NOTIFICATION =
   'The user ran the review-changes plugin, which started this subagent to lay out a code change for them. The subagent has finished, and the plugin shows its answer in the review pane, where the user reviews the change themselves. Nothing here needs action from you: acknowledge it in one short sentence.'
 
+export const ANALYZER_NOT_FOR_DELEGATION_NOTIFICATION =
+  'This subagent only prepares data for the review-changes plugin, so its answer is not shown here. Only the /review-changes command starts it: do not delegate to it again, and tell the user in one short sentence that they can run /review-changes instead.'
+
 export const ANSWER_TIMEOUT_MILLISECONDS = 15 * 60_000
 export const COLLECT_TIMEOUT_MILLISECONDS = 600_000
 export const MESSAGE_CHARACTER_LIMIT = 4001
@@ -84,8 +87,30 @@ export function currentRunId(): string | null {
   return runIdStartedByThisModuleLife
 }
 
-export function isFromAnalyzer(text: string): boolean {
-  return [...analyzerAgentIds].some(agentId => text.includes(`from="${agentId}"`))
+export function analyzerAgentIdsAmong(agents: readonly { id: string; type: string }[]): string[] {
+  const listedAgentIds = agents.filter(agent => agent.type === ANALYZER_AGENT).map(agent => agent.id)
+
+  return [...new Set([...analyzerAgentIds, ...listedAgentIds])]
+}
+
+export function isFromAnalyzer(text: string, agentIds: readonly string[]): boolean {
+  return agentIds.some(agentId => text.includes(`from="${agentId}"`))
+}
+
+function notificationFor(agentId: string): string {
+  return analyzerAgentIds.has(agentId) ? ANALYZER_FINISHED_NOTIFICATION : ANALYZER_NOT_FOR_DELEGATION_NOTIFICATION
+}
+
+export function withoutAnalyzerAnswer(text: string, agentIds: readonly string[]): string {
+  const handBackAgentId = agentIds.find(agentId => text.includes(`from="${agentId}"`))
+
+  if (handBackAgentId !== undefined) return notificationFor(handBackAgentId)
+
+  const notifiedAgentId = agentIds.find(agentId => text.includes(`<task-id>${agentId}</task-id>`))
+
+  if (notifiedAgentId === undefined) return text
+
+  return text.replace(/<result>[\s\S]*<\/result>/, () => `<result>${notificationFor(notifiedAgentId)}</result>`)
 }
 
 function messageOf(error: unknown): string {

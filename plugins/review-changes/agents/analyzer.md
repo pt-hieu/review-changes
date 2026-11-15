@@ -1,9 +1,10 @@
 ---
 name: analyzer
-description: Groups a diff of the current repository into review groups for review-changes. Used only by the review-changes plugin.
+description: Groups a diff of the current repository into review groups for the review-changes plugin. Never delegate to this agent. Only the /review-changes command starts it, and its answer is not shown to you.
 tools: Read, Grep, Glob
 model: sonnet
 maxTurns: 40
+background: true
 ---
 <!-- Adapted from pulls.review (https://github.com/antfu/pulls.review, MIT): packages/core/src/analyze/adapters/llm/prompt.ts and packages/core/src/types/analyze.ts. -->
 

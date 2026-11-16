@@ -1,5 +1,6 @@
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { errorCodeOf, isRecord } from '../json.ts'
 
 const SLUG_PATTERN = /^[A-Za-z0-9._-]{1,200}$/
 const SEED_BYTES = 6
@@ -20,7 +21,7 @@ export function loadOrCreateSeed(reviewedDirectory: string): number {
     closeSync(openSync(seedPath, 'wx', 0o600))
     writeFileSync(seedPath, String(randomSeed()))
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    if (errorCodeOf(error) !== 'EEXIST') throw error
   }
 
   const seed = Number(readFileSync(seedPath, 'utf8').trim())
@@ -39,9 +40,9 @@ function parseMarkLine(line: string): { key: number; isReviewed: boolean } | und
   try {
     const parsed: unknown = JSON.parse(line)
 
-    if (typeof parsed !== 'object' || parsed === null) return undefined
+    if (!isRecord(parsed)) return undefined
 
-    const { key, isReviewed } = parsed as { key?: unknown; isReviewed?: unknown }
+    const { key, isReviewed } = parsed
 
     if (typeof key !== 'number' || !Number.isSafeInteger(key) || key < 0) return undefined
     if (typeof isReviewed !== 'boolean') return undefined
@@ -120,7 +121,7 @@ export class ReviewedStore {
       const buffer = readFileSync(this.storePath)
       if (buffer.length <= MAXIMUM_STORE_BYTES) content = buffer.toString('utf8')
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if (errorCodeOf(error) !== 'ENOENT') throw error
       return
     }
 

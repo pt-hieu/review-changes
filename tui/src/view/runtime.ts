@@ -25,12 +25,26 @@ function reviewedLocation(reviewDirectory: string): { directory: string; slug: s
   return { directory: join(reviewDirectory, 'reviewed'), slug: 'session' }
 }
 
-function zoomPane(): void {
-  const binaryDirectory = process.env.REX_BIN_DIR
+type AppEnvironment = { isColorEnabled: boolean; zoomBinary: string | undefined }
 
-  if (binaryDirectory === undefined || binaryDirectory === '') return
+function nonEmpty(value: string | undefined): string | undefined {
+  return value === '' ? undefined : value
+}
 
-  const child = spawn(join(binaryDirectory, 'rex'), ['zoom'], { stdio: 'ignore', detached: true })
+function parseAppEnvironment(variables: Record<string, string | undefined>): AppEnvironment {
+  const binaryDirectory = nonEmpty(variables.REX_BIN_DIR)
+  const block = nonEmpty(variables.REX_BLOCK)
+
+  return {
+    isColorEnabled: nonEmpty(variables.NO_COLOR) === undefined,
+    zoomBinary: binaryDirectory === undefined || block === undefined ? undefined : join(binaryDirectory, 'rex'),
+  }
+}
+
+function zoomPane(zoomBinary: string | undefined): void {
+  if (zoomBinary === undefined) return
+
+  const child = spawn(zoomBinary, ['zoom'], { stdio: 'ignore', detached: true })
   child.on('error', () => {})
   child.unref()
 }
@@ -39,12 +53,13 @@ export function runApp(reviewDirectory: string): void {
   redirectStandardErrorToLog(reviewDirectory)
   silenceConsole()
 
+  const environment = parseAppEnvironment(process.env)
+
   const writer = new FrameWriter()
   const parser = new InputParser()
   let app: ReviewApp | undefined
   let review: LoadedReview | undefined
   let fatalMessage: string | undefined
-  let tickTimer: ReturnType<typeof setTimeout> | undefined
   let escapeTimer: ReturnType<typeof setTimeout> | undefined
   let highlightClient: ReturnType<typeof createHighlightClient> | undefined
 
@@ -98,7 +113,7 @@ export function runApp(reviewDirectory: string): void {
         const outcome = app.handleKey(event.name)
 
         if (outcome === KeyOutcome.Quit) shutdown(0)
-        if (outcome === KeyOutcome.ZoomPane) zoomPane()
+        if (outcome === KeyOutcome.ZoomPane) zoomPane(environment.zoomBinary)
 
         if (outcome === KeyOutcome.Redraw) {
           writer.invalidate()
@@ -128,7 +143,7 @@ export function runApp(reviewDirectory: string): void {
   const scheduleTick = (): void => {
     const delay = app?.hasFastBackgroundWork === true ? FAST_TICK_MILLISECONDS : IDLE_TICK_MILLISECONDS
 
-    tickTimer = setTimeout(() => {
+    setTimeout(() => {
       try {
         if (app !== undefined && fatalMessage === undefined && (app.tick() || app.hasPendingRepaint)) paint()
       } catch (error) {
@@ -159,10 +174,10 @@ export function runApp(reviewDirectory: string): void {
       review,
       reviewDirectory,
       store: new ReviewedStore(location.directory, location.slug),
-      theme: createTheme(process.env.NO_COLOR === undefined || process.env.NO_COLOR === ''),
+      theme: createTheme(environment.isColorEnabled),
       highlight: highlightClient,
       nowMilliseconds: () => Date.now(),
-      canZoomPane: (process.env.REX_BIN_DIR ?? '') !== '' && (process.env.REX_BLOCK ?? '') !== '',
+      canZoomPane: environment.zoomBinary !== undefined,
     })
   } catch (error) {
     showFatal(error instanceof Error ? error.message : 'unreadable review')

@@ -68,7 +68,6 @@ export class LineIndex {
   readonly hunkFirstRow: Uint32Array
   readonly hunks: HunkTable
 
-  private readonly table: FileTable
   private readonly reader: PatchReader
   private readonly baseOffset: number
   private readonly lineStart: Uint32Array
@@ -92,7 +91,6 @@ export class LineIndex {
     const hunkFileOffset = hunks.count > 0 ? hunks.offset[0]! : fileEnd
 
     this.fileIndex = fileIndex
-    this.table = table
     this.reader = reader
     this.hunks = hunks
     this.baseOffset = hunkFileOffset
@@ -170,7 +168,7 @@ export class LineIndex {
   }
 
   kindAt(row: number): RowKind {
-    return this.rowKind[row] as RowKind
+    return this.rowKind[row] ?? RowKind.Context
   }
 
   hunkIndexOfRow(row: number): number {
@@ -196,7 +194,7 @@ export class LineIndex {
     let newLine = this.checkpointNewLine[checkpoint]!
 
     for (let current = checkpoint * CHECKPOINT_INTERVAL; current < row; current++) {
-      const kind = this.rowKind[current] as RowKind
+      const kind = this.kindAt(current)
 
       if (kind === RowKind.HunkHeader) {
         const hunk = this.hunkIndexOfRow(current)
@@ -210,7 +208,7 @@ export class LineIndex {
       }
     }
 
-    const kind = this.rowKind[row] as RowKind
+    const kind = this.kindAt(row)
 
     if (kind === RowKind.HunkHeader) {
       const hunk = this.hunkIndexOfRow(row)
@@ -225,7 +223,7 @@ export class LineIndex {
   }
 
   readRow(row: number, startByte: number, maximumBytes: number): RowText {
-    const kind = this.rowKind[row] as RowKind
+    const kind = this.kindAt(row)
     const lineStartOffset = this.baseOffset + this.lineStart[row]!
     const nextStart = this.baseOffset + this.lineStart[row + 1]!
     const isLastRow = row === this.rowCount - 1

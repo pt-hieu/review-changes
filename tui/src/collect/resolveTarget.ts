@@ -72,6 +72,7 @@ async function resolveRange(context: RepositoryContext, base: string, head: stri
 
   const commits = parseCommitLog(await git.output(['git', 'log', '--reverse', '--format=%H%x1f%s%x1f%an%x1e', `${from}..${head}`]))
   const label = `${head} vs ${base}`
+  const [onlyCommit, ...laterCommits] = commits
 
   return {
     writePatch: async destination => {
@@ -79,7 +80,7 @@ async function resolveRange(context: RepositoryContext, base: string, head: stri
 
       return {
         target: { kind: ReviewTargetKind.Range, key: `range-${range}`, label, base, head, isMergeBase },
-        title: commits.length === 1 ? commits[0]!.subject : label,
+        title: onlyCommit !== undefined && laterCommits.length === 0 ? onlyCommit.subject : label,
         commits,
       }
     },
@@ -172,5 +173,9 @@ export async function resolveTarget(context: RepositoryContext, request: TargetR
       return resolveRevision(context, request.revision)
     case TargetRequestKind.PullRequest:
       return resolvePullRequest(context, request)
+    default: {
+      const unhandledRequest: never = request
+      return unhandledRequest
+    }
   }
 }

@@ -13,7 +13,7 @@ import {
 } from '../analysis.ts'
 import type { ReviewSource } from '../git.ts'
 import type { ReviewFile } from '../payload.ts'
-import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind, ReviewVisualChange } from '../types.ts'
+import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind, ReviewVisualChange, SessionMessageRole } from '../types.ts'
 
 const appPatch = [
   'diff --git a/src/app.ts b/src/app.ts',
@@ -427,12 +427,12 @@ describe('buildAnalyzerPrompt', () => {
 describe('selectUserRequests', () => {
   test('keeps only what the user typed, oldest first', () => {
     const requests = selectUserRequests([
-      { role: 'user', text: 'Add search.<system-reminder>Today is Monday.</system-reminder>' },
-      { role: 'assistant', text: 'Adding search now.' },
-      { role: 'user', text: '' },
-      { role: 'user', text: 'review-changes wrote a review page for 2 files (+3 −1) in 1 group: /repo/.git/review-changes/worktree.html' },
-      { role: 'user', text: '<command-name>/review-changes</command-name>' },
-      { role: 'user', text: 'Make the query case-insensitive.' },
+      { role: SessionMessageRole.User, text: 'Add search.<system-reminder>Today is Monday.</system-reminder>' },
+      { role: SessionMessageRole.Assistant, text: 'Adding search now.' },
+      { role: SessionMessageRole.User, text: '' },
+      { role: SessionMessageRole.User, text: 'review-changes wrote a review page for 2 files (+3 −1) in 1 group: /repo/.git/review-changes/worktree.html' },
+      { role: SessionMessageRole.User, text: '<command-name>/review-changes</command-name>' },
+      { role: SessionMessageRole.User, text: 'Make the query case-insensitive.' },
     ])
 
     expect(requests).toEqual(['Add search.', 'Make the query case-insensitive.'])
@@ -441,9 +441,9 @@ describe('selectUserRequests', () => {
   test('keeps the first request and the newest ones when the session is long', () => {
     const middleRequest = 'm'.repeat(SINGLE_USER_REQUEST_CHARACTER_LIMIT)
     const messages = [
-      { role: 'user' as const, text: 'First request.' },
-      ...Array.from({ length: 5 }, () => ({ role: 'user' as const, text: middleRequest })),
-      { role: 'user' as const, text: 'Newest request.' },
+      { role: SessionMessageRole.User, text: 'First request.' },
+      ...Array.from({ length: 5 }, () => ({ role: SessionMessageRole.User, text: middleRequest })),
+      { role: SessionMessageRole.User, text: 'Newest request.' },
     ]
 
     const requests = selectUserRequests(messages)
@@ -455,7 +455,7 @@ describe('selectUserRequests', () => {
   })
 
   test('cuts one very long message short', () => {
-    const [request] = selectUserRequests([{ role: 'user', text: 'x'.repeat(SINGLE_USER_REQUEST_CHARACTER_LIMIT + 100) }])
+    const [request] = selectUserRequests([{ role: SessionMessageRole.User, text: 'x'.repeat(SINGLE_USER_REQUEST_CHARACTER_LIMIT + 100) }])
 
     expect(request).toBe(`${'x'.repeat(SINGLE_USER_REQUEST_CHARACTER_LIMIT)}…`)
   })

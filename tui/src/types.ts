@@ -28,6 +28,16 @@ export enum FileFlag {
   PathTruncated = 16,
 }
 
+export enum CommandKind {
+  Open = 'open',
+  Stat = 'stat',
+  Collect = 'collect',
+  Ingest = 'ingest',
+  Candidate = 'candidate',
+  Direct = 'direct',
+  Usage = 'usage',
+}
+
 export enum LaunchExitCode {
   Usage = 64,
   UnsupportedSchema = 2,

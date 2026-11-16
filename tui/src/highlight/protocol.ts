@@ -1,3 +1,4 @@
+import { isRecord } from '../json.ts'
 import { WorkerMessageType } from '../types.ts'
 
 export type HighlightRequest = {
@@ -21,3 +22,15 @@ export type HighlightReply = {
 }
 
 export type WorkerOutput = HighlightReply | { type: WorkerMessageType.Failed; id: number }
+
+export function parseWorkerOutput(value: unknown): WorkerOutput | undefined {
+  if (!isRecord(value) || typeof value.id !== 'number') return undefined
+
+  if (value.type === WorkerMessageType.Failed) return { type: WorkerMessageType.Failed, id: value.id }
+
+  if (value.type !== WorkerMessageType.Highlighted) return undefined
+  if (typeof value.firstRow !== 'number' || typeof value.rowCount !== 'number') return undefined
+  if (!(value.offsets instanceof Uint32Array) || !(value.runs instanceof Uint32Array)) return undefined
+
+  return { type: WorkerMessageType.Highlighted, id: value.id, firstRow: value.firstRow, rowCount: value.rowCount, offsets: value.offsets, runs: value.runs }
+}

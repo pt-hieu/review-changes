@@ -11,18 +11,20 @@ import type { ReviewSource } from '../review/git.ts'
 import { buildReviewFiles } from '../review/patch.ts'
 import type { ReviewTarget } from '../review/payload.ts'
 import { TargetError, parseTargetArgument } from '../review/target.ts'
-import { ReviewTargetKind } from '../review/types.ts'
+import { ReviewTargetKind, SessionMessageRole } from '../review/types.ts'
 import { buildLargeAnalyzerPrompt } from '../analysis/largePrompt.ts'
 import { buildManifest } from '../analysis/manifest.ts'
 import { plainReason } from '../analysis/ingest.ts'
 import { seedGroups } from '../analysis/seedGroups.ts'
 import { summarizeSeeds } from '../analysis/seedSummaries.ts'
-import { ANALYSIS_FILE_NAME } from '../analysis/sessionAnalysis.ts'
+import { ANALYSIS_FILE_NAME, parseSessionAnalysis } from '../analysis/sessionAnalysis.ts'
 import { REVIEW_SESSION_SCHEMA_VERSION } from '../contract.ts'
 import type { CollectResult, ReviewSession, SessionAnalysis } from '../contract.ts'
+import { isRecord, memberOf } from '../json.ts'
 import type { FileTable } from '../patch/fileTable.ts'
 import { PatchReader } from '../patch/patchReader.ts'
 import { scanPatch } from '../patch/scanIndex.ts'
+import { parseReviewSession } from '../session/loadReview.ts'
 import { AnalysisStatus } from '../types.ts'
 import { createCommandRunner } from './commandRunner.ts'
 import { MAXIMUM_CHANGED_ENTRIES } from './diffCommand.ts'
@@ -42,6 +44,25 @@ const REVIEW_CHANGES_COMMAND = /<command-name>\/?review-changes<\/command-name>/
 
 export type CollectInput = { target: string; messages: SessionMessageText[] }
 
+function parseSessionMessage(value: unknown): SessionMessageText | undefined {
+  if (!isRecord(value) || typeof value.text !== 'string') return undefined
+
+  const role = memberOf(Object.values(SessionMessageRole), value.role)
+
+  return role === undefined ? undefined : { role, text: value.text }
+}
+
+export function parseCollectInput(value: unknown): CollectInput | undefined {
+  if (!isRecord(value)) return undefined
+
+  const messages = Array.isArray(value.messages) ? value.messages.map(parseSessionMessage) : []
+
+  return {
+    target: typeof value.target === 'string' ? value.target : '',
+    messages: messages.filter(message => message !== undefined),
+  }
+}
+
 function safeLabel(text: string): string {
   return text.replace(HIDDEN_CHARACTERS, '').slice(0, LABEL_CHARACTER_LIMIT)
 }
@@ -56,6 +77,10 @@ export function modelLabelOf(target: ReviewTarget): string {
       return `commit ${target.sha.slice(0, 7)}`
     case ReviewTargetKind.Range:
       return 'the requested range'
+    default: {
+      const unhandledTarget: never = target
+      return unhandledTarget
+    }
   }
 }
 
@@ -79,9 +104,9 @@ export function sha256OfFile(path: string): string {
   return hasher.digest('hex')
 }
 
-function readExisting<Value>(path: string): Value | undefined {
+function readExisting<Value>(path: string, parse: (value: unknown) => Value | undefined): Value | undefined {
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as Value
+    return parse(JSON.parse(readFileSync(path, 'utf8')))
   } catch {
     return undefined
   }
@@ -179,8 +204,8 @@ async function collectUnchecked(input: CollectInput, workingDirectory: string): 
       const patchDigest = sha256OfFile(patchTemporaryPath)
       const slug = `${slugFromKey(details.target.key)}-${Bun.hash(details.target.key + context.repository.root).toString(16).padStart(8, '0').slice(-8)}`
       const reviewDirectory = join(sessionsDirectory, slug)
-      const existingSession = readExisting<ReviewSession>(join(reviewDirectory, 'review.json'))
-      const existingAnalysis = readExisting<SessionAnalysis>(join(reviewDirectory, ANALYSIS_FILE_NAME))
+      const existingSession = readExisting(join(reviewDirectory, 'review.json'), parseReviewSession)
+      const existingAnalysis = readExisting(join(reviewDirectory, ANALYSIS_FILE_NAME), parseSessionAnalysis)
       const isAnalysisCurrent =
         existingSession?.patchDigest === patchDigest &&
         existingAnalysis?.reviewId === existingSession.reviewId &&

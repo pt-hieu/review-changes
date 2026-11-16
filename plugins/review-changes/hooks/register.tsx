@@ -15,7 +15,7 @@ import {
   withoutAnalyzerAnswer,
 } from './run.ts'
 import type { ReviewChangesEngine } from './run.ts'
-import { locateRex } from './rex.ts'
+import { parseHookEnvironment } from './rex.ts'
 import { SessionMessageRole } from './types.ts'
 
 const candidate = atom({ plugin: 'review-changes', key: 'candidate' } as const, null)
@@ -150,7 +150,7 @@ export const register: Register = on => {
     const runningReview = await read($, run)
     const offer = await read($, candidate)
     const lastPane = await read($, pane)
-    const isInRex = locateRex(await readRexEnvironment($)) !== null
+    const isInRex = parseHookEnvironment(await readRexEnvironment($)).rex !== null
     const isRunning = runningReview !== null && runningReview.runId === currentRunId()
 
     if (!isRunning && offer === null && lastPane === null) return next(e)

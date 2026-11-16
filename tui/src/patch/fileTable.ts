@@ -1,4 +1,4 @@
-import { FileFlag, type FileStatusCode } from '../types.ts'
+import { FileFlag, FileStatusCode } from '../types.ts'
 
 type TypedArray = Uint8Array | Uint32Array | Float64Array
 
@@ -11,13 +11,23 @@ const MAXIMUM_ESTIMATED_CAPACITY = 1 << 24
 
 const pathDecoder = new TextDecoder('utf-8', { ignoreBOM: true })
 
-function grown<Array extends TypedArray>(array: Array, minimumLength: number): Array {
+function emptyLike(array: TypedArray, length: number): TypedArray {
+  if (array instanceof Uint8Array) return new Uint8Array(length)
+  if (array instanceof Uint32Array) return new Uint32Array(length)
+
+  return new Float64Array(length)
+}
+
+function grown(array: Uint8Array, minimumLength: number): Uint8Array
+function grown(array: Uint32Array, minimumLength: number): Uint32Array
+function grown(array: Float64Array, minimumLength: number): Float64Array
+function grown(array: TypedArray, minimumLength: number): TypedArray {
   if (array.length >= minimumLength) return array
 
   let length = array.length * 2
   while (length < minimumLength) length *= 2
 
-  const replacement = new (array.constructor as new (length: number) => Array)(length)
+  const replacement = emptyLike(array, length)
   replacement.set(array)
 
   return replacement
@@ -141,6 +151,10 @@ export class FileTable {
     return { first: this.firstHunk[fileIndex]!, end: this.firstHunk[fileIndex + 1]! }
   }
 
+  statusOf(fileIndex: number): FileStatusCode {
+    return this.status[fileIndex] ?? FileStatusCode.Modified
+  }
+
   isBinary(fileIndex: number): boolean {
     return (this.flags[fileIndex]! & FileFlag.Binary) !== 0
   }
@@ -185,7 +199,7 @@ export class FileTableBuilder {
   patchStartLine: Uint32Array
   firstHunk: Uint32Array
   pathOffset: Uint32Array
-  pathBytes = new Uint8Array(INITIAL_PATH_CAPACITY)
+  pathBytes: Uint8Array = new Uint8Array(INITIAL_PATH_CAPACITY)
 
   constructor(
     patchByteLength = 0,

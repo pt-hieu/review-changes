@@ -3,17 +3,25 @@ import type { CommandRunner } from './bun.ts'
 
 export type RexLocation = { block: string; session: string; binary: string }
 
+export type RexEnvironment = { block?: string; session?: string; binaryDirectory?: string; home?: string }
+
+export type HookEnvironment = { rex: RexLocation | null; home: string | undefined }
+
 export const PANE_LABEL = 'review-changes'
 export const PANE_RATIO_PERCENT = '70'
 
 const REX_COMMAND_TIMEOUT_MILLISECONDS = 15_000
 
-export function locateRex(environment: { block?: string; session?: string; binaryDirectory?: string }): RexLocation | null {
+function locateRex(environment: RexEnvironment): RexLocation | null {
   if (!environment.block || !environment.session) return null
 
   const binary = environment.binaryDirectory ? `${environment.binaryDirectory}/rex` : 'rex'
 
   return { block: environment.block, session: environment.session, binary }
+}
+
+export function parseHookEnvironment(variables: RexEnvironment): HookEnvironment {
+  return { rex: locateRex(variables), home: variables.home === '' ? undefined : variables.home }
 }
 
 export function splitArguments(rex: RexLocation, bunPath: string, appPath: string, neutralDirectory: string, reviewDirectory: string): string[] {
@@ -39,8 +47,9 @@ export function closeArguments(rex: RexLocation, blockId: string): string[] {
 
 export function parseSplitBlockId(stdout: string): string | null {
   try {
-    const parsed = JSON.parse(stdout) as { block_ids?: unknown }
-    const first = Array.isArray(parsed.block_ids) ? parsed.block_ids[0] : undefined
+    const parsed: unknown = JSON.parse(stdout)
+    const blockIds = typeof parsed === 'object' && parsed !== null && 'block_ids' in parsed ? parsed.block_ids : undefined
+    const first: unknown = Array.isArray(blockIds) ? blockIds[0] : undefined
 
     return typeof first === 'string' && first !== '' ? first : null
   } catch {

@@ -1,13 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { findReviewCandidate } from './review/git.ts'
-import type { SessionMessageText } from './review/analysis.ts'
 import { ingestAnalysis } from './analysis/ingest.ts'
 import { ANALYSIS_FILE_NAME } from './analysis/sessionAnalysis.ts'
-import { collect } from './collect/collect.ts'
+import { collect, parseCollectInput } from './collect/collect.ts'
 import { createCommandRunner } from './collect/commandRunner.ts'
-import type { SessionAnalysis } from './contract.ts'
-import { LaunchExitCode } from './types.ts'
+import { isRecord } from './json.ts'
+import { CommandKind, LaunchExitCode } from './types.ts'
 import { loadReview, UnsupportedSchemaError } from './session/loadReview.ts'
 import { loadOrCreateSeed } from './store/reviewedStore.ts'
 import { runApp } from './view/runtime.ts'
@@ -20,6 +19,15 @@ const USAGE = [
   '       review-changes ingest <reviewDirectory> --review-id ID [--failed REASON]   (stdin: the analyzer answer)',
   '       review-changes candidate --cwd DIR',
 ].join('\n')
+
+type Command =
+  | { kind: CommandKind.Open; reviewDirectory: string }
+  | { kind: CommandKind.Stat; reviewDirectory: string }
+  | { kind: CommandKind.Collect; workingDirectory: string }
+  | { kind: CommandKind.Ingest; reviewDirectory: string; reviewId: string; failedReason: string | undefined }
+  | { kind: CommandKind.Candidate; workingDirectory: string }
+  | { kind: CommandKind.Direct; workingDirectory: string; target: string }
+  | { kind: CommandKind.Usage }
 
 function valueOfOption(argumentsList: string[], name: string): string | undefined {
   const position = argumentsList.indexOf(name)
@@ -47,15 +55,18 @@ function describe(reviewDirectory: string): void {
   review.reader.close()
 }
 
-async function runCollect(argumentsList: string[]): Promise<number> {
-  const workingDirectory = valueOfOption(argumentsList, '--cwd') ?? process.cwd()
-  let input: { target: string; messages: SessionMessageText[] }
-
+function readCollectInput(text: string): ReturnType<typeof parseCollectInput> {
   try {
-    const parsed = JSON.parse(await Bun.stdin.text()) as Partial<typeof input>
-
-    input = { target: typeof parsed.target === 'string' ? parsed.target : '', messages: Array.isArray(parsed.messages) ? parsed.messages : [] }
+    return parseCollectInput(JSON.parse(text))
   } catch {
+    return undefined
+  }
+}
+
+async function runCollect(workingDirectory: string): Promise<number> {
+  const input = readCollectInput(await Bun.stdin.text())
+
+  if (input === undefined) {
     print({ isCollected: false, message: 'review-changes collect expects JSON on stdin.', modelMessage: 'review-changes collect expects JSON on stdin.' })
 
     return LaunchExitCode.Usage
@@ -66,23 +77,13 @@ async function runCollect(argumentsList: string[]): Promise<number> {
   return 0
 }
 
-async function runIngest(argumentsList: string[]): Promise<number> {
-  const reviewDirectory = argumentsList[1]
-  const reviewId = valueOfOption(argumentsList, '--review-id')
-
-  if (reviewDirectory === undefined || reviewId === undefined) {
-    process.stderr.write(`${USAGE}\n`)
-
-    return LaunchExitCode.Usage
-  }
-
-  const failedReason = valueOfOption(argumentsList, '--failed')
+async function runIngest(reviewDirectory: string, reviewId: string, failedReason: string | undefined): Promise<number> {
   let analysisStartedAt = new Date().toISOString()
 
   try {
-    const existing = JSON.parse(readFileSync(join(reviewDirectory, ANALYSIS_FILE_NAME), 'utf8')) as Partial<SessionAnalysis>
+    const existing: unknown = JSON.parse(readFileSync(join(reviewDirectory, ANALYSIS_FILE_NAME), 'utf8'))
 
-    if (typeof existing.analysisStartedAt === 'string') analysisStartedAt = existing.analysisStartedAt
+    if (isRecord(existing) && typeof existing.analysisStartedAt === 'string') analysisStartedAt = existing.analysisStartedAt
   } catch {
     analysisStartedAt = new Date().toISOString()
   }
@@ -105,9 +106,7 @@ async function runIngest(argumentsList: string[]): Promise<number> {
   }
 }
 
-async function runCandidate(argumentsList: string[]): Promise<number> {
-  const workingDirectory = valueOfOption(argumentsList, '--cwd') ?? process.cwd()
-
+async function runCandidate(workingDirectory: string): Promise<number> {
   print(await findReviewCandidate(createCommandRunner(), workingDirectory))
 
   return 0
@@ -119,9 +118,7 @@ function withoutOption(argumentsList: string[], name: string): string[] {
   return position === -1 ? argumentsList : argumentsList.toSpliced(position, 2)
 }
 
-async function runDirect(argumentsList: string[]): Promise<number> {
-  const workingDirectory = valueOfOption(argumentsList, '--cwd') ?? process.cwd()
-  const target = withoutOption(argumentsList, '--cwd').join(' ')
+async function runDirect(workingDirectory: string, target: string): Promise<number> {
   const result = await collect({ target, messages: [] }, workingDirectory)
 
   if (!result.isCollected) {
@@ -144,40 +141,69 @@ async function runDirect(argumentsList: string[]): Promise<number> {
   return -1
 }
 
-async function main(argumentsList: string[]): Promise<number> {
+function parseCommandLine(argumentsList: string[], currentDirectory: string): Command {
   const [subcommand, reviewDirectory] = argumentsList
+  const workingDirectory = valueOfOption(argumentsList, '--cwd') ?? currentDirectory
 
-  if (subcommand === 'open' && reviewDirectory !== undefined) {
-    runApp(reviewDirectory)
+  if (subcommand === CommandKind.Open || subcommand === CommandKind.Stat) {
+    if (reviewDirectory === undefined) return { kind: CommandKind.Usage }
 
-    return -1
+    return subcommand === CommandKind.Open ? { kind: CommandKind.Open, reviewDirectory } : { kind: CommandKind.Stat, reviewDirectory }
   }
 
-  if (subcommand === 'collect') return runCollect(argumentsList)
-  if (subcommand === 'ingest') return runIngest(argumentsList)
-  if (subcommand === 'candidate') return runCandidate(argumentsList)
+  if (subcommand === CommandKind.Collect) return { kind: CommandKind.Collect, workingDirectory }
+  if (subcommand === CommandKind.Candidate) return { kind: CommandKind.Candidate, workingDirectory }
 
-  if (subcommand === 'stat' && reviewDirectory !== undefined) {
-    try {
-      describe(reviewDirectory)
+  if (subcommand === CommandKind.Ingest) {
+    const reviewId = valueOfOption(argumentsList, '--review-id')
 
-      return 0
-    } catch (error) {
-      process.stderr.write(`${error instanceof Error ? error.message : 'unreadable review'}\n`)
+    if (reviewDirectory === undefined || reviewId === undefined) return { kind: CommandKind.Usage }
 
-      return error instanceof UnsupportedSchemaError ? LaunchExitCode.UnsupportedSchema : LaunchExitCode.Unreadable
-    }
+    return { kind: CommandKind.Ingest, reviewDirectory, reviewId, failedReason: valueOfOption(argumentsList, '--failed') }
   }
 
-  if (subcommand === 'open' || subcommand === 'stat') {
-    process.stderr.write(`${USAGE}\n`)
-
-    return LaunchExitCode.Usage
-  }
-
-  return runDirect(argumentsList)
+  return { kind: CommandKind.Direct, workingDirectory, target: withoutOption(argumentsList, '--cwd').join(' ') }
 }
 
-const exitCode = await main(process.argv.slice(2))
+function runStat(reviewDirectory: string): number {
+  try {
+    describe(reviewDirectory)
+
+    return 0
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : 'unreadable review'}\n`)
+
+    return error instanceof UnsupportedSchemaError ? LaunchExitCode.UnsupportedSchema : LaunchExitCode.Unreadable
+  }
+}
+
+async function main(command: Command): Promise<number> {
+  switch (command.kind) {
+    case CommandKind.Open:
+      runApp(command.reviewDirectory)
+
+      return -1
+    case CommandKind.Stat:
+      return runStat(command.reviewDirectory)
+    case CommandKind.Collect:
+      return runCollect(command.workingDirectory)
+    case CommandKind.Ingest:
+      return runIngest(command.reviewDirectory, command.reviewId, command.failedReason)
+    case CommandKind.Candidate:
+      return runCandidate(command.workingDirectory)
+    case CommandKind.Direct:
+      return runDirect(command.workingDirectory, command.target)
+    case CommandKind.Usage:
+      process.stderr.write(`${USAGE}\n`)
+
+      return LaunchExitCode.Usage
+    default: {
+      const unhandledCommand: never = command
+      return unhandledCommand
+    }
+  }
+}
+
+const exitCode = await main(parseCommandLine(process.argv.slice(2), process.cwd()))
 
 if (exitCode >= 0) process.exit(exitCode)

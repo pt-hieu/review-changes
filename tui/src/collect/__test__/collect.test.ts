@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ingestAnalysis } from '../../analysis/ingest.ts'
-import { collect } from '../collect.ts'
+import { SessionMessageRole } from '../../review/types.ts'
+import { collect, parseCollectInput } from '../collect.ts'
 
 const roots: string[] = []
 
@@ -187,5 +188,26 @@ describe('collecting again', () => {
 
     expect(outcome.isIngested).toBe(false)
     expect(existsSync(join(first.reviewDirectory, 'analysis.json'))).toBe(true)
+  })
+})
+
+describe('parseCollectInput', () => {
+  test('reads the target and each message role into an enum member', () => {
+    expect(parseCollectInput({ target: 'HEAD~1', messages: [{ role: 'user', text: 'Add search.' }, { role: 'assistant', text: 'Done.' }] })).toEqual({
+      target: 'HEAD~1',
+      messages: [
+        { role: SessionMessageRole.User, text: 'Add search.' },
+        { role: SessionMessageRole.Assistant, text: 'Done.' },
+      ],
+    })
+  })
+
+  test('drops messages it cannot read and reads a missing target as empty', () => {
+    expect(parseCollectInput({ messages: [{ role: 'system', text: 'hidden' }, { role: 'user' }, 'text'] })).toEqual({ target: '', messages: [] })
+  })
+
+  test('rejects input that is not an object', () => {
+    expect(parseCollectInput([])).toBeUndefined()
+    expect(parseCollectInput('HEAD')).toBeUndefined()
   })
 })

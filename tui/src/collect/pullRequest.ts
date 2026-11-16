@@ -4,6 +4,7 @@ import { ReviewSourceError, parseGitHubName } from '../review/git.ts'
 import type { Runner } from '../review/git.ts'
 import type { ReviewCommit, ReviewTarget } from '../review/payload.ts'
 import { ReviewTargetKind } from '../review/types.ts'
+import { isRecord, optionalString, stringOr } from '../json.ts'
 import { runCommandToFile, withEnvironment } from './commandRunner.ts'
 import { MAXIMUM_PATCH_BYTES, diffToFile, objectsDirectory, quotedObjectDirectory } from './diffCommand.ts'
 
@@ -16,14 +17,14 @@ type PullRequestView = {
   title: string
   body: string
   url: string
-  author: { login: string } | null
+  author: string | null
   baseRefName: string
   headRefName: string
   state: string
-  headRefOid: string
-  baseRefOid: string
+  headRefOid: string | undefined
+  baseRefOid: string | undefined
   changedFiles: number
-  commits: { oid: string; messageHeadline: string; authors: { login?: string; name?: string }[] }[]
+  commits: ReviewCommit[]
 }
 
 export type CollectedPullRequest = {
@@ -96,6 +97,39 @@ async function hasCommit(git: Runner, objectId: string): Promise<boolean> {
   return git.succeeds(['git', 'cat-file', '-e', `${objectId}^{commit}`])
 }
 
+function parsePullRequestCommit(value: unknown): ReviewCommit | undefined {
+  if (!isRecord(value) || typeof value.oid !== 'string' || typeof value.messageHeadline !== 'string') return undefined
+
+  const firstAuthor = Array.isArray(value.authors) ? value.authors[0] : undefined
+  const author = isRecord(firstAuthor) ? optionalString(firstAuthor.name) || optionalString(firstAuthor.login) || '' : ''
+
+  return { sha: value.oid, subject: value.messageHeadline, author }
+}
+
+function parsePullRequestView(value: unknown): PullRequestView | undefined {
+  if (!isRecord(value) || typeof value.number !== 'number' || typeof value.title !== 'string' || typeof value.url !== 'string') return undefined
+  if (typeof value.baseRefName !== 'string' || typeof value.headRefName !== 'string' || typeof value.state !== 'string') return undefined
+
+  const commits = Array.isArray(value.commits) ? value.commits.map(parsePullRequestCommit) : []
+
+  if (commits.some(commit => commit === undefined)) return undefined
+
+  return {
+    number: value.number,
+    title: value.title,
+    body: stringOr(value.body, ''),
+    url: value.url,
+    author: isRecord(value.author) ? optionalString(value.author.login) ?? null : null,
+    baseRefName: value.baseRefName,
+    headRefName: value.headRefName,
+    state: value.state,
+    headRefOid: optionalString(value.headRefOid),
+    baseRefOid: optionalString(value.baseRefOid),
+    changedFiles: typeof value.changedFiles === 'number' ? value.changedFiles : 0,
+    commits: commits.filter(commit => commit !== undefined),
+  }
+}
+
 function describe(view: PullRequestView): CollectedPullRequest {
   return {
     target: {
@@ -106,16 +140,12 @@ function describe(view: PullRequestView): CollectedPullRequest {
       url: view.url,
       baseRef: view.baseRefName,
       headRef: view.headRefName,
-      author: view.author?.login ?? null,
+      author: view.author,
       state: view.state,
     },
     title: view.title,
     ...(view.body ? { description: view.body } : {}),
-    commits: (view.commits ?? []).map(commit => ({
-      sha: commit.oid,
-      subject: commit.messageHeadline,
-      author: commit.authors[0]?.name || commit.authors[0]?.login || '',
-    })),
+    commits: view.commits,
   }
 }
 
@@ -132,15 +162,20 @@ export async function collectPullRequestToFile(request: PullRequestDiffRequest):
     '--json', 'number,title,body,url,author,baseRefName,headRefName,state,commits,headRefOid,baseRefOid,changedFiles',
   ], NETWORK_TIMEOUT_MILLISECONDS)
 
-  let view: PullRequestView
+  let parsed: unknown
   try {
-    view = JSON.parse(viewText) as PullRequestView
+    parsed = JSON.parse(viewText)
   } catch {
     throw new ReviewSourceError(`gh pr view ${pullRequestNumber} printed something other than JSON.`)
   }
 
-  const revisions = [`${view.baseRefOid}...${view.headRefOid}`]
-  const hasBothCommits = await hasCommit(git, view.baseRefOid) && await hasCommit(git, view.headRefOid)
+  const view = parsePullRequestView(parsed)
+
+  if (view === undefined) throw new ReviewSourceError(`gh pr view ${pullRequestNumber} did not describe a pull request.`)
+
+  const { baseRefOid, headRefOid } = view
+  const revisions = [`${baseRefOid}...${headRefOid}`]
+  const hasBothCommits = baseRefOid !== undefined && headRefOid !== undefined && await hasCommit(git, baseRefOid) && await hasCommit(git, headRefOid)
 
   if (hasBothCommits) {
     await diffToFile({ directory: repositoryRoot, revisions, outputPath })
@@ -171,6 +206,8 @@ export async function collectPullRequestToFile(request: PullRequestDiffRequest):
     throw new ReviewSourceError('This pull request is too large for GitHub to diff, and this clone is shallow. Run git fetch --unshallow, or review a narrower target.')
   }
 
+  if (baseRefOid === undefined) throw new ReviewSourceError(`gh pr view ${pullRequestNumber} did not name the base commit.`)
+
   const remote = await findRemoteOf(git, repositoryName)
 
   if (remote === null) {
@@ -184,7 +221,7 @@ export async function collectPullRequestToFile(request: PullRequestDiffRequest):
       git,
       repositoryRoot,
       remote,
-      baseObjectId: view.baseRefOid,
+      baseObjectId: baseRefOid,
       pullRequestNumber,
       quarantineDirectory,
     })

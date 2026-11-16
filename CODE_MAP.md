@@ -38,6 +38,7 @@
 - `tui/src/main.ts` is the app's entry: open, stat, collect, ingest, candidate, or a direct launch.
 - `tui/src/contract.ts` defines the session file contract shared by the app and its callers.
 - `tui/src/types.ts` holds the app-level enums.
+- `tui/src/json.ts` holds the helpers that parse untyped JSON and enum strings at a boundary.
 - `tui/build.ts` is the Bun.build script that writes `plugins/review-changes/assets/`.
 - `package.json` holds the bun scripts: build:tui, test, test:tui, typecheck, validate, bench:tui, bench:tui:data.
 - `tsconfig.plugin.json` type-checks the hooks module.

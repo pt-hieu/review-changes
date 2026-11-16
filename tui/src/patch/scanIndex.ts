@@ -194,7 +194,6 @@ class PatchScanner {
   private keyLength = 0
   private lineNumber = 0
 
-  private isFileOpen = false
   private fileOffset = 0
   private fileLine = 0
   private fileFirstHunk = 0
@@ -347,7 +346,7 @@ class PatchScanner {
       return
     }
 
-    if (!this.isFileOpen) return
+    if (this.diffLine === undefined) return
 
     if (first === AT && startsWith(bytes, start, end, HUNK_PREFIX)) {
       this.openHunk(bytes, start, end, offset)
@@ -360,7 +359,6 @@ class PatchScanner {
   private beginFile(bytes: Uint8Array, start: number, end: number, offset: number, lineNumber: number, isTruncated: boolean): void {
     const capturedEnd = Math.min(end, start + CAPTURED_LINE_BYTES)
 
-    this.isFileOpen = true
     this.fileOffset = offset
     this.fileLine = lineNumber
     this.fileFirstHunk = this.builder.hunkCount
@@ -488,15 +486,17 @@ class PatchScanner {
   private finishFile(endOffset: number): void {
     if (this.isInsideHunk) this.closeHunk()
 
-    if (!this.isFileOpen) return
+    const diffLine = this.diffLine
 
-    this.isFileOpen = false
+    if (diffLine === undefined) return
+
+    this.diffLine = undefined
 
     const fileBytes = endOffset - this.fileOffset
     const isCostlyToRescan = fileBytes >= RETAIN_MINIMUM_FILE_BYTES && this.fileHunks <= RETAIN_MAXIMUM_HUNKS && this.fileHunks * RETAIN_MINIMUM_BYTES_PER_HUNK <= fileBytes
     if (isCostlyToRescan && this.retainer !== undefined) this.builder.retainedHunks.set(this.builder.fileCount, this.retainer.copyOfHunks())
 
-    const diffPaths = splitDiffLinePaths(this.diffLine!)
+    const diffPaths = splitDiffLinePaths(diffLine)
     const isRemoved = this.fileStatus === FileStatusCode.Removed
     const sidePath = isRemoved
       ? this.minusValue === undefined ? undefined : sidePathOf(this.minusValue, OLD_SIDE_PREFIX)

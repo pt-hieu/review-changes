@@ -14,6 +14,7 @@ import type { FileTable } from '../patch/fileTable.ts'
 import { PatchReader } from '../patch/patchReader.ts'
 import { scanFileHunks, scanPatch } from '../patch/scanIndex.ts'
 import { readSession } from '../session/loadReview.ts'
+import { isRecord } from '../json.ts'
 import { AnalysisStatus, FileFlag, FileStatusCode } from '../types.ts'
 import { ANALYSIS_FILE_NAME } from './sessionAnalysis.ts'
 import { seedGroups } from './seedGroups.ts'
@@ -33,10 +34,6 @@ const STATUS_OF_CODE: Record<FileStatusCode, ReviewFileStatus> = {
 export type IngestOutcome = { isIngested: boolean; message: string }
 
 export type AnalyzedAnswer = { overallSummary: string; groups: IndexedGroup[] } | { error: string }
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
 
 export function plainReason(text: string): string {
   return text.replace(HIDDEN_CHARACTERS, ' ').replace(/\s+/g, ' ').trim().slice(0, MAXIMUM_REASON_CHARACTERS)
@@ -88,7 +85,7 @@ function reviewFilesOf(table: FileTable, reader: PatchReader, hunkPaths: Set<str
     return {
       path,
       ...(previousPath === undefined ? {} : { previousPath }),
-      status: STATUS_OF_CODE[table.status[fileIndex] as FileStatusCode] ?? ReviewFileStatus.Modified,
+      status: STATUS_OF_CODE[table.statusOf(fileIndex)],
       additions: table.additions[fileIndex]!,
       deletions: table.deletions[fileIndex]!,
       isBinary: (table.flags[fileIndex]! & FileFlag.Binary) !== 0,

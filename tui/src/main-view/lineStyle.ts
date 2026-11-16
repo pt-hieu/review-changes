@@ -18,7 +18,7 @@ function slotAt(runs: Uint32Array, position: number): { slot: SyntaxSlot; isEmph
   for (let index = 0; index < runs.length; index += RUN_STRIDE) {
     if (runs[index]! > position) break
 
-    slot = runs[index + 1]! as SyntaxSlot
+    slot = runs[index + 1] ?? SyntaxSlot.Plain
     isEmphasized = runs[index + 2]! === 1
   }
 

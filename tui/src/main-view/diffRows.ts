@@ -46,7 +46,6 @@ export class DiffRows implements RowSource {
   private unresolvedLineNotes: LineNoteEntry[] = []
   private resolvedLineNotes: { entry: LineNoteEntry; row: number }[] = []
   private fileNotes: FileNoteEntry[] = []
-  private lineNotes: LineNoteEntry[] = []
   private lastRenderedWidth = 0
   private lastResolvedRows = -1
   private numberWidth = 4
@@ -89,7 +88,6 @@ export class DiffRows implements RowSource {
     this.fileIndex = fileIndex
     this.lineIndex = this.lineIndexes.get(fileIndex)
     this.fileNotes = fileNotes
-    this.lineNotes = lineNotes
     this.areNotesVisible = areNotesVisible
     this.emphasisCache = new Map()
     this.horizontalColumn = 0
@@ -327,7 +325,7 @@ export class DiffRows implements RowSource {
 
       if (located.kind === VirtualRowKind.Header) rows.push(fitToWidth(this.headerRows[located.index]!, width))
       else if (located.kind === VirtualRowKind.Note) rows.push(fitToWidth(this.placedNotes[located.noteIndex]!.lines[located.index] ?? EMPTY_DISPLAY_TEXT, width))
-      else rows.push(this.patchRowText(located.index, width))
+      else rows.push(this.lineIndex === undefined ? paddingOf(width) : this.patchRowText(this.lineIndex, located.index, width))
     }
 
     return rows
@@ -400,9 +398,7 @@ export class DiffRows implements RowSource {
     return row === pair.deletionRow ? result.oldRanges : result.newRanges
   }
 
-  private patchRowText(row: number, width: number): DisplayText {
-    const lineIndex = this.lineIndex!
-
+  private patchRowText(lineIndex: LineIndex, row: number, width: number): DisplayText {
     if (row >= lineIndex.indexedRowCount) {
       return fitToWidth(applyStyle(this.theme.role[StyleRole.Muted], ELLIPSIS), width)
     }

@@ -1,6 +1,4 @@
-import { statSync } from 'node:fs'
-import { join } from 'node:path'
-import { analysisModifiedTime, ANALYSIS_FILE_NAME, ANALYSIS_TIMEOUT_MILLISECONDS, loadAnalysis, type LoadedAnalysis } from '../analysis/sessionAnalysis.ts'
+import { analysisModifiedTime, ANALYSIS_TIMEOUT_MILLISECONDS, loadAnalysis, type LoadedAnalysis } from '../analysis/sessionAnalysis.ts'
 import { NoteIndex, type JumpTarget } from '../analysis/noteIndex.ts'
 import type { IndexedGroup, ReviewSession } from '../contract.ts'
 import { DiffRows } from '../main-view/diffRows.ts'
@@ -21,7 +19,7 @@ import type { Theme } from '../terminal/styles.ts'
 import { Action, AnalysisStatus, FileStatusCode, InputMode, KeyOutcome, MainViewKind, PanelId, ScreenMode, StyleRole } from '../types.ts'
 import { renderBox, renderCollapsed, titleText, clippedTail, type ScrollThumb } from './box.ts'
 import type { FrameRow } from './frame.ts'
-import { computeLayout, type Layout, type Rect } from './layout.ts'
+import { computeLayout, type Layout, type Rect, type SideLayout } from './layout.ts'
 import { resolveAction } from './keymap.ts'
 import type { RunsSource } from '../main-view/diffRows.ts'
 
@@ -103,7 +101,6 @@ export class ReviewApp {
   private readonly diffRows: DiffRows
   private readonly rank: Uint32Array
   private readonly allFiles: Int32Array
-  private readonly rowCapacityFiles: number
   private analysis: LoadedAnalysis
   private noteIndex: NoteIndex
   private criticalFiles: Uint8Array
@@ -155,7 +152,6 @@ export class ReviewApp {
     this.session = this.review.session
     this.table = this.review.table
     this.startedAt = this.nowMilliseconds()
-    this.rowCapacityFiles = this.table.fileCount
     this.pathFilter = new PathFilter(this.table)
     this.diffRows = new DiffRows(this.table, this.review.lineIndexes, this.theme, this.highlight)
 
@@ -365,7 +361,7 @@ export class ReviewApp {
   private openFile(fileIndex: number): void {
     if (this.diffRows.currentFile !== fileIndex) {
       this.diffRows.setFile(fileIndex, this.noteIndex.fileNotes.get(fileIndex) ?? [], this.noteIndex.lineNotes.get(fileIndex) ?? [], !this.notesHidden)
-      this.diffRows.currentLineIndex!.advance(FIRST_SCREEN_INDEX_MILLISECONDS)
+      this.diffRows.currentLineIndex?.advance(FIRST_SCREEN_INDEX_MILLISECONDS)
       this.scrolls[MainViewKind.Diff] = 0
       this.search = undefined
       this.searchMatchCursor = -1
@@ -736,6 +732,10 @@ export class ReviewApp {
       case Action.PreviousMatch:
         this.jumpToMatch(-1)
         break
+      default: {
+        const unhandledAction: never = action
+        return unhandledAction
+      }
     }
 
     return KeyOutcome.Continue
@@ -1055,9 +1055,9 @@ export class ReviewApp {
     this.openFile(target.fileIndex)
     this.focus = PanelId.Main
 
-    if (target.line === undefined || target.side === undefined) return
+    const lineIndex = this.diffRows.currentLineIndex
 
-    const lineIndex = this.diffRows.currentLineIndex!
+    if (target.line === undefined || target.side === undefined || lineIndex === undefined) return
 
     lineIndex.advance(JUMP_INDEX_MILLISECONDS)
     this.diffRows.prepare(this.mainInnerWidth)
@@ -1121,15 +1121,15 @@ export class ReviewApp {
       return Array.from({ length: rows }, (_unusedValue, row) => [{ column: 0, text: row === 0 ? notice : paddingOf(columns) }])
     }
 
-    const sideLines = layout.side === undefined ? undefined : this.renderSide(layout)
-    const mainLines = layout.main === undefined ? undefined : this.renderMain(layout.main)
+    const side = layout.side === undefined ? undefined : { lines: this.renderSide(layout.side), width: layout.side.review.width }
+    const main = layout.main === undefined ? undefined : { lines: this.renderMain(layout.main), rect: layout.main }
     const frame: FrameRow[] = []
 
     for (let row = 0; row < rows - 1; row++) {
       const segments: FrameRow = []
 
-      if (sideLines !== undefined) segments.push({ column: 0, text: sideLines[row] ?? paddingOf(layout.side!.review.width) })
-      if (mainLines !== undefined && layout.main !== undefined) segments.push({ column: layout.main.column, text: mainLines[row] ?? paddingOf(layout.main.width) })
+      if (side !== undefined) segments.push({ column: 0, text: side.lines[row] ?? paddingOf(side.width) })
+      if (main !== undefined) segments.push({ column: main.rect.column, text: main.lines[row] ?? paddingOf(main.rect.width) })
 
       frame.push(segments)
     }
@@ -1139,8 +1139,8 @@ export class ReviewApp {
     return frame
   }
 
-  private renderSide(layout: Layout): DisplayText[] {
-    const { review, groups, files } = layout.side!
+  private renderSide(side: SideLayout): DisplayText[] {
+    const { review, groups, files } = side
     const lines: DisplayText[] = []
     const width = review.width
 
@@ -1193,7 +1193,7 @@ export class ReviewApp {
       }
     }
 
-    const status = STATUS_LETTER[this.table.status[fileIndex] as FileStatusCode] ?? '?'
+    const status = STATUS_LETTER[this.table.statusOf(fileIndex)]
     const stats = ` ${status} +${this.table.additions[fileIndex]} -${this.table.deletions[fileIndex]} `
     const counter = position >= 0 ? ` ${position + 1}/${this.visibleCount} ` : ''
 

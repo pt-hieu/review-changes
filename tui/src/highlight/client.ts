@@ -5,7 +5,8 @@ import type { LineIndexCache } from '../patch/lineIndex.ts'
 import { FileFlag, WorkerMessageType } from '../types.ts'
 import type { HighlightService } from '../view/appState.ts'
 import { languageForPath } from './languageNames.ts'
-import type { HighlightReply, WorkerInput, WorkerOutput } from './protocol.ts'
+import { parseWorkerOutput } from './protocol.ts'
+import type { HighlightReply, WorkerInput } from './protocol.ts'
 
 export type HighlightClient = HighlightService & { dispose(): void }
 
@@ -22,13 +23,6 @@ const BYTES_PER_RUN_VALUE = 4
 type Job = { id: number; fileIndex: number; key: string; language: string; offset: number; length: number; firstRow: number; rowCount: number }
 
 type CachedChunk = { fileIndex: number; rows: number[]; bytes: number }
-
-type WorkerLike = {
-  postMessage(message: WorkerInput, transfer?: ArrayBuffer[]): void
-  terminate(): void
-  onmessage: ((event: { data: WorkerOutput }) => void) | null
-  onerror: ((event: unknown) => void) | null
-}
 
 function workerUrl(): string | undefined {
   const candidates = ['./highlight-worker.js', './worker.ts']
@@ -49,7 +43,7 @@ export function createHighlightClient(table: FileTable, lineIndexes: LineIndexCa
   const queuedKeys = new Set<string>()
   const plainFiles = new Set<number>()
   let cacheBytes = 0
-  let worker: WorkerLike | undefined
+  let worker: Worker | undefined
   let runningJob: Job | undefined
   let runningSince = 0
   let nextJobId = 1
@@ -120,7 +114,11 @@ export function createHighlightClient(table: FileTable, lineIndexes: LineIndexCa
     if (failures >= MAXIMUM_WORKER_FAILURES) isDisabled = true
   }
 
-  const ensureWorker = (): WorkerLike | undefined => {
+  const send = (target: Worker, message: WorkerInput): void => {
+    target.postMessage(message)
+  }
+
+  const ensureWorker = (): Worker | undefined => {
     if (worker !== undefined) return worker
     if (isDisabled) return undefined
 
@@ -133,13 +131,13 @@ export function createHighlightClient(table: FileTable, lineIndexes: LineIndexCa
     }
 
     try {
-      const created = new Worker(url) as unknown as WorkerLike
+      const created = new Worker(url)
 
       created.onmessage = event => {
-        const output = event.data
+        const output = parseWorkerOutput(event.data)
         const job = runningJob
 
-        if (job === undefined || output.id !== job.id) return
+        if (output === undefined || job === undefined || output.id !== job.id) return
 
         runningJob = undefined
 
@@ -152,7 +150,7 @@ export function createHighlightClient(table: FileTable, lineIndexes: LineIndexCa
         pump()
       }
       created.onerror = () => handleFailure()
-      created.postMessage({ type: WorkerMessageType.Init, patchPath, patchInode })
+      send(created, { type: WorkerMessageType.Init, patchPath, patchInode })
       worker = created
 
       return created
@@ -170,7 +168,10 @@ export function createHighlightClient(table: FileTable, lineIndexes: LineIndexCa
 
     if (active === undefined) return
 
-    const job = pending.shift()!
+    const job = pending.shift()
+
+    if (job === undefined) return
+
     queuedKeys.delete(job.key)
 
     if (cachedChunks.has(job.key) || plainFiles.has(job.fileIndex)) {
@@ -181,7 +182,7 @@ export function createHighlightClient(table: FileTable, lineIndexes: LineIndexCa
 
     runningJob = job
     runningSince = performance.now()
-    active.postMessage({ type: WorkerMessageType.Highlight, id: job.id, language: job.language, offset: job.offset, length: job.length, firstRow: job.firstRow, rowCount: job.rowCount })
+    send(active, { type: WorkerMessageType.Highlight, id: job.id, language: job.language, offset: job.offset, length: job.length, firstRow: job.firstRow, rowCount: job.rowCount })
   }
 
   return {

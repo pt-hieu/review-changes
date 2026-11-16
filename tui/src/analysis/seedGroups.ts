@@ -118,9 +118,13 @@ function mergeSmallSiblings(buckets: Bucket[]): Bucket[] {
 function mergeSmallestUntilWithinLimit(buckets: Bucket[], limit: number): Bucket[] {
   const remaining = [...buckets].sort((left, right) => left.entries.length - right.entries.length)
 
-  while (remaining.length > limit && remaining.length > 1) {
-    const smallest = remaining.shift()!
-    const second = remaining.shift()!
+  for (;;) {
+    const [smallest, second] = remaining
+
+    if (remaining.length <= limit || smallest === undefined || second === undefined) break
+
+    remaining.splice(0, 2)
+
     const mergedEntries = [...smallest.entries, ...second.entries]
     const merged = bucketOf(mergedLabel(mergedEntries), mergedEntries)
     const insertAt = remaining.findIndex(bucket => bucket.entries.length >= merged.entries.length)

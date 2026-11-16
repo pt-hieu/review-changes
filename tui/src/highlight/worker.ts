@@ -45,7 +45,7 @@ function slotOfColor(color: string | undefined): SyntaxSlot {
 
   const index = SLOT_COLORS.indexOf(color.toLowerCase())
 
-  return index === -1 ? SyntaxSlot.Plain : ((index + 1) as SyntaxSlot)
+  return index === -1 ? SyntaxSlot.Plain : index + 1
 }
 
 async function ensureHighlighter(language: string): Promise<HighlighterCore | undefined> {
@@ -62,7 +62,7 @@ async function ensureHighlighter(language: string): Promise<HighlighterCore | un
   }
 
   if (!loadedLanguages.has(language)) {
-    await highlighter.loadLanguage((await loader()).default as never)
+    await highlighter.loadLanguage((await loader()).default)
     loadedLanguages.add(language)
   }
 

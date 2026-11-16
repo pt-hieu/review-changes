@@ -4,9 +4,11 @@ export type Rect = { column: number; row: number; width: number; height: number 
 
 export type SidePanelHeights = { review: number; groups: number; files: number }
 
+export type SideLayout = { review: Rect; groups: Rect; files: Rect }
+
 export type Layout = {
   isTooSmall: boolean
-  side: { review: Rect; groups: Rect; files: Rect } | undefined
+  side: SideLayout | undefined
   main: Rect | undefined
   keyBar: Rect
   columns: number

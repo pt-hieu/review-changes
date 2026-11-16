@@ -6,6 +6,11 @@ export enum ReviewFileStatus {
   Copied = 'copied',
 }
 
+export enum SessionMessageRole {
+  User = 'user',
+  Assistant = 'assistant',
+}
+
 export enum ReviewLineSide {
   Additions = 'additions',
   Deletions = 'deletions',

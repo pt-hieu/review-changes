@@ -85,11 +85,12 @@ export class PatchReader {
       return cached
     }
 
+    const oldest = this.blocks.size >= BLOCK_CAPACITY ? this.blocks.entries().next().value : undefined
     let recycled: Buffer | undefined
 
-    if (this.blocks.size >= BLOCK_CAPACITY) {
-      const oldestKey = this.blocks.keys().next().value!
-      recycled = this.blocks.get(oldestKey)!.buffer
+    if (oldest !== undefined) {
+      const [oldestKey, oldestBlock] = oldest
+      recycled = oldestBlock.buffer
       this.blocks.delete(oldestKey)
     }
 

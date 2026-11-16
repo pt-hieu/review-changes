@@ -22,7 +22,7 @@ export function forgetBunPath(): void {
 export function bunCandidates(home: string | undefined): string[] {
   return [
     'bun',
-    ...(home === undefined || home === '' ? [] : [`${home}/.bun/bin/bun`]),
+    ...(home === undefined ? [] : [`${home}/.bun/bin/bun`]),
     '/opt/homebrew/bin/bun',
     '/usr/local/bin/bun',
   ]

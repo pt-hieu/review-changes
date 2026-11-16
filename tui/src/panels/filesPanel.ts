@@ -40,11 +40,12 @@ export function filesPanelRows(app: ReviewApp, width: number, height: number, is
       line = joinDisplayText([applyStyle(theme.role[StyleRole.Title], body), applyStyle(theme.role[StyleRole.Muted], count)])
     } else {
       const reviewed = app.isFileReviewed(fileIndex)
-      const status = STATUS_LETTERS[table.status[fileIndex] as FileStatusCode] ?? '?'
+      const statusCode = table.statusOf(fileIndex)
+      const status = STATUS_LETTERS[statusCode]
       const statusRole =
-        table.status[fileIndex] === FileStatusCode.Added
+        statusCode === FileStatusCode.Added
           ? StyleRole.Addition
-          : table.status[fileIndex] === FileStatusCode.Removed
+          : statusCode === FileStatusCode.Removed
             ? StyleRole.Deletion
             : StyleRole.Muted
       const statsRaw = `+${compactCount(table.additions[fileIndex]!)} -${compactCount(table.deletions[fileIndex]!)}`

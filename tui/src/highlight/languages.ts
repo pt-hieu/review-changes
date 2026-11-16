@@ -1,4 +1,6 @@
-type LanguageModule = Promise<{ default: unknown }>
+import type { LanguageRegistration } from 'shiki/core'
+
+type LanguageModule = Promise<{ default: LanguageRegistration[] }>
 
 export const LANGUAGE_LOADERS: Record<string, () => LanguageModule> = {
   typescript: () => import('@shikijs/langs/typescript'),

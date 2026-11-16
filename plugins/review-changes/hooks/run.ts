@@ -6,12 +6,12 @@ import {
   closeArguments,
   focusArguments,
   isBlockAlive,
-  locateRex,
+  parseHookEnvironment,
   parseSplitBlockId,
   runRex,
   splitArguments,
 } from './rex.ts'
-import type { RexLocation } from './rex.ts'
+import type { RexEnvironment, RexLocation } from './rex.ts'
 import { PaneOutcome, ReviewPhase, SessionMessageRole } from './types.ts'
 
 type ReviewChangesState = PluginState['review-changes']
@@ -34,7 +34,7 @@ export type CollectedReview = {
 
 export type AnalyzerAnswer = { answer: string; reason: string }
 
-export type RexEnvironment = { block?: string; session?: string; binaryDirectory?: string; home?: string }
+export type { RexEnvironment }
 
 export type ReviewChangesEngine = {
   pluginDirectory: string
@@ -187,22 +187,44 @@ const UNREADABLE_RESULT: NotCollected = {
   modelMessage: 'review-changes could not read the collected review.',
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseCollectedReview(value: Record<string, unknown>): CollectedReview | null {
+  const { reviewId, reviewDirectory, repositoryRoot, label, modelLabel, fileCount, additions, deletions, isAnalysisCurrent, analyzerPrompt } = value
+
+  if (typeof reviewId !== 'string' || typeof reviewDirectory !== 'string' || typeof repositoryRoot !== 'string') return null
+  if (typeof label !== 'string' || typeof modelLabel !== 'string' || typeof analyzerPrompt !== 'string') return null
+  if (typeof fileCount !== 'number' || typeof additions !== 'number' || typeof deletions !== 'number' || typeof isAnalysisCurrent !== 'boolean') return null
+
+  return { isCollected: true, reviewId, reviewDirectory, repositoryRoot, label, modelLabel, fileCount, additions, deletions, isAnalysisCurrent, analyzerPrompt }
+}
+
 function parseCollectResult(stdout: string): CollectedReview | NotCollected {
+  let parsed: unknown
+
   try {
-    const parsed = JSON.parse(stdout.trim().split('\n').at(-1) ?? '') as Record<string, unknown>
-
-    if (parsed.isCollected === true && typeof parsed.reviewDirectory === 'string' && typeof parsed.reviewId === 'string') {
-      return parsed as unknown as CollectedReview
-    }
-
-    if (parsed.isCollected === false && typeof parsed.message === 'string' && typeof parsed.modelMessage === 'string') {
-      return { isCollected: false, message: plainLine(parsed.message), modelMessage: plainLine(parsed.modelMessage) }
-    }
+    parsed = JSON.parse(stdout.trim().split('\n').at(-1) ?? '')
   } catch {
     return UNREADABLE_RESULT
   }
 
+  if (!isRecord(parsed)) return UNREADABLE_RESULT
+
+  if (parsed.isCollected === true) return parseCollectedReview(parsed) ?? UNREADABLE_RESULT
+
+  if (parsed.isCollected === false && typeof parsed.message === 'string' && typeof parsed.modelMessage === 'string') {
+    return { isCollected: false, message: plainLine(parsed.message), modelMessage: plainLine(parsed.modelMessage) }
+  }
+
   return UNREADABLE_RESULT
+}
+
+function parseCandidate(stdout: string): { summary: string } | null {
+  const parsed: unknown = JSON.parse(stdout.trim() || 'null')
+
+  return isRecord(parsed) && typeof parsed.summary === 'string' ? { summary: plainLine(parsed.summary) } : null
 }
 
 async function bundleExists(engine: ReviewChangesEngine, appPath: string): Promise<boolean> {
@@ -309,6 +331,10 @@ function summaryText(collected: CollectedReview, outcome: PaneOutcome, detail: s
       return `Review of ${size} is ready. Not inside Rex, so no pane was opened. To open it, run: ${commandLine} ${analysis}`
     case PaneOutcome.Failed:
       return `Review of ${size} is ready, but the Rex pane did not open (${detail}). To open it, run: ${commandLine} ${analysis}`
+    default: {
+      const unhandledOutcome: never = outcome
+      return unhandledOutcome
+    }
   }
 }
 
@@ -334,7 +360,7 @@ export async function startReview(engine: ReviewChangesEngine, argumentText: str
 async function collectAndAnalyze(engine: ReviewChangesEngine, runId: string, argumentText: string): Promise<StartedReview> {
   await engine.updateRun(() => ({ runId, label: 'current changes', phase: ReviewPhase.Collecting }))
 
-  const environment = await engine.readEnvironment()
+  const environment = parseHookEnvironment(await engine.readEnvironment())
   let bunPath = await resolveBun(engine.runCommand, environment.home, engine.pluginDirectory)
 
   if (bunPath === null) {
@@ -374,8 +400,7 @@ async function collectAndAnalyze(engine: ReviewChangesEngine, runId: string, arg
     return { text: collected.modelMessage, userText: collected.message }
   }
 
-  const rex = locateRex(environment)
-  const { outcome, detail } = await showPane(engine, { rex, bunPath, appPath, collected })
+  const { outcome, detail } = await showPane(engine, { rex: environment.rex, bunPath, appPath, collected })
   const commandLine = openCommandLine(bunPath, appPath, collected.reviewDirectory)
   const text = summaryText(collected, outcome, detail, commandLine)
 
@@ -461,8 +486,8 @@ export async function startReviewWithToast(engine: ReviewChangesEngine, argument
 
 export async function openPane(engine: ReviewChangesEngine): Promise<void> {
   const pane = await engine.readPane()
-  const environment = await engine.readEnvironment()
-  const rex = locateRex(environment)
+  const environment = parseHookEnvironment(await engine.readEnvironment())
+  const rex = environment.rex
 
   if (pane === null || rex === null) return
 
@@ -495,7 +520,7 @@ export async function openPane(engine: ReviewChangesEngine): Promise<void> {
 
 export async function refreshCandidate(engine: ReviewChangesEngine): Promise<void> {
   try {
-    const environment = await engine.readEnvironment()
+    const environment = parseHookEnvironment(await engine.readEnvironment())
     const bunPath = await resolveBun(engine.runCommand, environment.home, engine.pluginDirectory)
 
     if (bunPath === null) return
@@ -505,8 +530,7 @@ export async function refreshCandidate(engine: ReviewChangesEngine): Promise<voi
       appArguments(bunPath, `${engine.pluginDirectory}/assets/review-changes.js`, 'candidate', '--cwd', workingDirectory),
       { cwd: engine.pluginDirectory, timeoutMs: 30_000 },
     )
-    const parsed = JSON.parse(result.stdout.trim() || 'null') as { summary?: unknown } | null
-    const found = parsed !== null && typeof parsed.summary === 'string' ? { summary: plainLine(parsed.summary) } : null
+    const found = parseCandidate(result.stdout)
     const current = await engine.readCandidate()
 
     if ((current?.summary ?? null) === (found?.summary ?? null)) return

@@ -23,7 +23,7 @@ export function buildManifest(table: FileTable, seeds: IndexedGroup[]): string {
     lines.push(
       [
         JSON.stringify(table.pathOf(fileIndex)),
-        STATUS_LETTERS[table.status[fileIndex] as FileStatusCode] ?? 'M',
+        STATUS_LETTERS[table.statusOf(fileIndex)],
         table.additions[fileIndex],
         table.deletions[fileIndex],
         seedKeyOfFile[fileIndex],

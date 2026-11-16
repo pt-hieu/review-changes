@@ -10,7 +10,8 @@ import type {
 } from './payload.ts'
 import { countOf, totalLineCounts } from './counts.ts'
 import type { ReviewSource } from './git.ts'
-import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind, ReviewVisualChange } from './types.ts'
+import { isRecord, memberOf } from '../json.ts'
+import { ReviewCategory, ReviewFileStatus, ReviewLineSide, ReviewTargetKind, ReviewVisualChange, SessionMessageRole } from './types.ts'
 
 export const INLINE_DIFF_CHARACTER_LIMIT = 200_000
 
@@ -22,7 +23,7 @@ export const MAXIMUM_VISUAL_LINES = 40
 
 const MODEL_NOTE_OPENING = 'review-changes wrote a review page'
 
-export type SessionMessageText = { role: 'user' | 'assistant'; text: string }
+export type SessionMessageText = { role: SessionMessageRole; text: string }
 
 const STATUS_LETTERS: Record<ReviewFileStatus, string> = {
   [ReviewFileStatus.Added]: 'A',
@@ -123,7 +124,7 @@ function truncateRequest(text: string): string {
 }
 
 function isUserRequest(message: SessionMessageText): boolean {
-  return message.role === 'user' && !message.text.startsWith(MODEL_NOTE_OPENING) && !/<command-name>\/?review-changes<\/command-name>/.test(message.text)
+  return message.role === SessionMessageRole.User && !message.text.startsWith(MODEL_NOTE_OPENING) && !/<command-name>\/?review-changes<\/command-name>/.test(message.text)
 }
 
 export function selectUserRequests(messages: SessionMessageText[]): string[] {
@@ -191,19 +192,11 @@ export function extractJsonText(answer: string): string | null {
   return start !== -1 && end > start ? answer.slice(start, end + 1) : null
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function toKebabCase(text: string): string {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-}
-
-function isReviewLineSide(value: unknown): value is ReviewLineSide {
-  return Object.values(ReviewLineSide).includes(value as ReviewLineSide)
 }
 
 function isInsideHunkOfSide(file: ReviewFile, side: ReviewLineSide, line: number): boolean {
@@ -297,7 +290,7 @@ export function normalizeAnalysis(overallSummary: unknown, rawGroups: unknown[],
     const group: ReviewGroup = {
       key: uniqueKey(wantedKey || `group-${position}`),
       label: typeof record.label === 'string' && record.label.trim() ? record.label : `Group ${position}`,
-      category: Object.values(ReviewCategory).includes(record.category as ReviewCategory) ? (record.category as ReviewCategory) : ReviewCategory.Other,
+      category: memberOf(Object.values(ReviewCategory), record.category) ?? ReviewCategory.Other,
       summary: typeof record.summary === 'string' ? record.summary : '',
       filePaths: [],
       fileNotes: [],
@@ -349,7 +342,7 @@ export function normalizeAnalysis(overallSummary: unknown, rawGroups: unknown[],
 
       const path = rawNote.path
       const file = filesByPath.get(path)
-      const side = rawNote.side
+      const side = memberOf(Object.values(ReviewLineSide), rawNote.side)
       const line = rawNote.line
       const isCritical = rawNote.critical === true
       const isLineNumber = typeof line === 'number' && Number.isInteger(line)
@@ -357,7 +350,7 @@ export function normalizeAnalysis(overallSummary: unknown, rawGroups: unknown[],
       if (
         file &&
         isLineNumber &&
-        isReviewLineSide(side) &&
+        side !== undefined &&
         isInsideHunkOfSide(file, side, line)
       ) {
         const note: ReviewLineNote = { path, side, line, text: rawNote.text }

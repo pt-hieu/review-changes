@@ -1,0 +1,3 @@
+bun.lock
+plugins/review-changes/assets/highlight-worker.js
+plugins/review-changes/assets/review-changes.js

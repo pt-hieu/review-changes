@@ -17,6 +17,8 @@ When a feature request or design choice does not make the human's own review fas
 
 Every coding rule is in `CODING_STANDARDS.md`.
 
+`CODE_MAP.md` says where things live in this repo; read it before searching for a file. A change that adds, moves, or removes a directory, an entry point, or a path the map names updates the map in the same commit.
+
 ## Before committing
 
 **Version bumps** — in the same commit as any change to `plugins/review-changes/`:

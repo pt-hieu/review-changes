@@ -10,6 +10,33 @@
 
 Statements inside a function are grouped by goal: the lines that together achieve one thing sit next to each other, and a blank line separates one group from the next. Each branch of a conditional is its own group.
 
+## Domain state
+
+A piece of domain knowledge lives in one structure that encodes it: a state machine for a lifecycle, a lookup table keyed on the variant for per-variant values, a discriminated union for variants that hold different data. Code reads the structure instead of branching on the same condition in several places. In this repo, `STATUS_LETTERS` in `tui/src/review/analysis.ts`, keyed on `ReviewFileStatus`, is one.
+
+- A new variant is a new entry in the structure. A change that adds one more branch to an if/else chain that already exists is the sign the structure is missing.
+- State that two booleans would have to keep in sync is one value: `status: Status.Loading` rather than `isLoading` beside `isLoaded`.
+- A module is organized around the domain knowledge it owns. A pipeline split into steps (load, validate, transform, save) repeats the same domain rules in each step.
+- Logic that lives in one place and has two or three cases stays a plain conditional. A structure earns its place by deleting branches, duplicated rules, or invalid states.
+
+## Boundaries
+
+Data from outside the program, from `process.env` reads, command-line arguments, the session file and the analyzer's answer, `git` and `gh` output, and the engine's hook environment, is parsed into the repo's own types where it enters. Code past that point trusts those types and checks nothing again.
+
+- A parse function turns raw input into a typed value or an error, and business logic receives the typed value.
+- Business logic is pure functions with no framework imports. The framework layer parses input, calls them, and writes the output.
+- The public surface of a module exposes the repo's domain types. Transport, storage, and wire types stay inside the module that talks to them.
+
+## Types admit only valid states
+
+A type admits the states the program can be in, and the compiler rejects the rest.
+
+- Variants that hold different data are a discriminated union keyed on an enum member. `{ completed: boolean; completedAt?: Date }` admits a completed task with no date, and `{ status: TaskStatus.Open } | { status: TaskStatus.Done; completedAt: Date }` admits valid tasks alone. A comment explaining which combinations of fields are valid marks a type that is a union.
+- A `switch` over a union handles every member and ends in a `default` that assigns the value to `never`, so adding a member fails compilation at every `switch` that misses it.
+- Two values that share a primitive and differ in meaning, such as a `UserId` and an `OrderId`, are branded types, each created by one function that validates it.
+- `as`, a non-null `!`, and `any` each assert a fact the compiler cannot prove. The fact is proven where the data enters (see Boundaries), and the assertion goes.
+- A runtime check or a "should never happen" throw marks a type that is wider than the data. The type narrows at that spot and no further: a type tracks what each caller must handle, and a function that has an answer for every input keeps the plain type.
+
 ## Enums, not string unions
 
 A closed set of string values is a TypeScript enum with string values, declared in the `types.ts` of the module that owns the set. Members are PascalCase. Values are the strings the wire format or storage already uses.
